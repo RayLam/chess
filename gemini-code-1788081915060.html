@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aquatic Dolphin Chess</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background-color: #050e14;
+      font-family: Arial, sans-serif;
+    }
+    #info {
+      position: absolute;
+      top: 15px;
+      left: 15px;
+      color: #ffffff;
+      background: rgba(5, 14, 20, 0.85);
+      padding: 12px 18px;
+      border-radius: 8px;
+      border: 1px solid #00ffff44;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+      pointer-events: none;
+    }
+    #status {
+      font-weight: bold;
+      color: #ff69b4;
+    }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+</head>
+<body>
+
+  <div id="info">
+    <h2>Aquatic Dolphin Chess</h2>
+    <p>Turn: <span id="status">White (Light Pink)</span></p>
+    <p><small>Click a piece, then click a highlighted square to move.</small></p>
+  </div>
+
+  <script>
+    // --- 1. INITIAL SETUP & CHESS LOGIC ---
+    const game = new Chess();
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x0a2533, 0.015);
+
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 12, 14);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.shadowMap.enabled = true;
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.target.set(0, 0, 0);
+    controls.maxPolarAngle = Math.PI / 2 - 0.05; // Prevent camera from going under the board
+    controls.update();
+
+    // --- 2. LIGHTING & ENVIRONMENT ---
+    const ambientLight = new THREE.AmbientLight(0x88ccee, 0.7);
+    scene.add(ambientLight);
+
+    const sunLight = new THREE.DirectionalLight(0xffffff, 1.2);
+    sunLight.position.set(5, 15, 8);
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.width = 2048;
+    sunLight.shadow.mapSize.height = 2048;
+    scene.add(sunLight);
+
+    // --- 3. BOARD & AQUATIC BASE CREATION ---
+    const boardGroup = new THREE.Group();
+    const piecesGroup = new THREE.Group();
+    const highlightsGroup = new THREE.Group();
+    scene.add(boardGroup);
+    scene.add(piecesGroup);
+    scene.add(highlightsGroup);
+
+    // Blue Water Lagoon Base (Lower Deck)
+    const lagoonGeo = new THREE.BoxGeometry(10, 2, 10);
+    const lagoonMat = new THREE.MeshPhongMaterial({
+      color: 0x006688,
+      transparent: true,
+      opacity: 0.8,
+      shininess: 100
+    });
+    const lagoon = new THREE.Mesh(lagoonGeo, lagoonMat);
+    lagoon.position.y = -1.1;
+    scene.add(lagoon);
+
+    // Translucent Glass Board (Top Deck)
+    const squareSize = 1;
+    const boardOffset = 3.5;
+    const boardSquares = {};
+
+    for (let row = 0; row < 8; row++) {
+      for (let col = 0; col < 8; col++) {
+        const isLight = (row + col) % 2 === 0;
+        const squareGeo = new THREE.BoxGeometry(squareSize, 0.1, squareSize);
+        const squareMat = new THREE.MeshPhysicalMaterial({
+          color: isLight ? 0xe0f7fa : 0x004d40,
+          transparent: true,
+          opacity: 0.6,
+          roughness: 0.1,
+          transmission: 0.6,
+          thickness: 0.5
+        });
+        const square = new THREE.Mesh(squareGeo, squareMat);
+        
+        const file = String.fromCharCode(97 + col);
+        const rank = 8 - row;
+        const squareName = file + rank;
+
+        square.position.set(col - boardOffset, 0, row - boardOffset);
+        square.receiveShadow = true;
+        square.userData = { squareName, col, row };
+        
+        boardGroup.add(square);
+        boardSquares[squareName] = square;
+      }
+    }
+
+    // --- 4. DOLPHIN PIECE GENERATION (PLACEHOLDERS) ---
+    // Procedural Dolphin Shape to represent custom 3D models before GLTF loading
+    function createDolphinGeometry() {
+      const group = new THREE.Group();
+      // Body
+      const bodyGeo = new THREE.ConeGeometry(0.25, 0.8, 16);
+      bodyGeo.rotateX(Math.PI / 3);
+      const body = new THREE.Mesh(bodyGeo);
+      body.position.y = 0.4;
+      group.add(body);
+      
+      // Base Pedestal
+      const baseGeo = new THREE.CylinderGeometry(0.35, 0.4, 0.15, 16);
+      const base = new THREE.Mesh(baseGeo);
+      base.position.y = 0.075;
+      group.add(base);
+
+      return group;
+    }
+
+    const dolphinTemplate = createDolphinGeometry();
+
+    const whiteMaterial = new THREE.MeshStandardMaterial({
+      color: 0xffb6c1, // Light Pink
+      roughness: 0.2,
+      metalness: 0.1
+    });
+
+    const blackMaterial = new THREE.MeshStandardMaterial({
+      color: 0x8b005d, // Dark Pink / Magenta
+      roughness: 0.2,
+      metalness: 0.3
+    });
+
+    function renderPieces() {
+      // Clear existing pieces
+      while (piecesGroup.children.length > 0) {
+        piecesGroup.remove(piecesGroup.children[0]);
+      }
+
+      const boardState = game.board();
+      for (let row = 0; row < 8; row++) {
+        for (let col = 0; col < 8; col++) {
+          const piece = boardState[row][col];
+          if (piece) {
+            const pieceMesh = dolphinTemplate.clone();
+            const mat = piece.color === 'w' ? whiteMaterial : blackMaterial;
+            
+            pieceMesh.traverse((child) => {
+              if (child.isMesh) {
+                child.material = mat;
+                child.castShadow = true;
+              }
+            });
+
+            const file = String.fromCharCode(97 + col);
+            const rank = 8 - row;
+            const squareName = file + rank;
+
+            pieceMesh.position.set(col - boardOffset, 0.1, row - boardOffset);
+            pieceMesh.userData = { squareName, piece };
+            piecesGroup.add(pieceMesh);
+          }
+        }
+      }
+    }
+
+    renderPieces();
+
+    // --- 5. INTERACTION & GAME LOGIC ---
+    let selectedSquare = null;
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+
+    function clearHighlights() {
+      while (highlightsGroup.children.length > 0) {
+        highlightsGroup.remove(highlightsGroup.children[0]);
+      }
+    }
+
+    function highlightSquare(squareName, color = 0x00ffff) {
+      const target = boardSquares[squareName];
+      if (!target) return;
+      const highlightGeo = new THREE.PlaneGeometry(0.9, 0.9);
+      const highlightMat = new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, transparent: true, opacity: 0.5 });
+      const mesh = new THREE.Mesh(highlightGeo, highlightMat);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.set(target.position.x, 0.06, target.position.z);
+      highlightsGroup.add(mesh);
+    }
+
+    window.addEventListener('click', (event) => {
+      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObjects([...boardGroup.children, ...piecesGroup.children], true);
+
+      if (intersects.length > 0) {
+        let clickedObject = intersects[0].object;
+        while (clickedObject.parent && clickedObject.parent !== boardGroup && clickedObject.parent !== piecesGroup) {
+          clickedObject = clickedObject.parent;
+        }
+
+        const squareName = clickedObject.userData.squareName;
+
+        if (selectedSquare) {
+          // Attempt move
+          const move = game.move({
+            from: selectedSquare,
+            to: squareName,
+            promotion: 'q' // Default auto-promote to queen
+          });
+
+          if (move) {
+            selectedSquare = null;
+            clearHighlights();
+            renderPieces();
+            updateStatus();
+            return;
+          }
+        }
+
+        // Select piece
+        const piece = game.get(squareName);
+        if (piece && piece.color === game.turn()) {
+          selectedSquare = squareName;
+          clearHighlights();
+          highlightSquare(squareName, 0xffff00);
+
+          const moves = game.moves({ square: squareName, verbose: true });
+          moves.forEach((m) => highlightSquare(m.to, 0x00ff00));
+        } else {
+          selectedSquare = null;
+          clearHighlights();
+        }
+      }
+    });
+
+    function updateStatus() {
+      const statusEl = document.getElementById('status');
+      let statusText = game.turn() === 'w' ? 'White (Light Pink)' : 'Dark Pink / Magenta';
+      if (game.in_check()) statusText += ' - CHECK!';
+      if (game.in_checkmate()) statusText = 'Game Over - Checkmate!';
+      if (game.in_draw()) statusText = 'Game Over - Draw!';
+      statusEl.textContent = statusText;
+    }
+
+    // Window Resize Handler
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // --- 6. ANIMATION LOOP ---
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+  </script>
+</body>
+</html>
