@@ -8,7 +8,7 @@
     body {
       margin: 0;
       overflow: hidden;
-      background: radial-gradient(circle at center, #0a1e2b 0%, #02080c 100%);
+      background: #02080c;
       font-family: Arial, sans-serif;
     }
     #info {
@@ -17,10 +17,9 @@
       left: 15px;
       color: #ffffff;
       background: rgba(5, 20, 30, 0.85);
-      padding: 14px 20px;
-      border-radius: 10px;
-      border: 1px solid #00e5ff44;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+      padding: 12px 18px;
+      border-radius: 8px;
+      border: 1px solid #00e5ff;
       pointer-events: none;
       z-index: 100;
     }
@@ -38,37 +37,29 @@
 <body>
 
   <div id="info">
-    <h2 style="margin:0 0 6px 0; font-size: 1.3em;">Aquatic Dolphin Chess</h2>
+    <h2 style="margin:0 0 4px 0;">Aquatic Dolphin Chess</h2>
     <p style="margin:0;">Turn: <span id="status">Pink Team</span></p>
   </div>
 
   <script>
-    // --- 1. ENGINE & SCENE SETUP ---
     const game = new Chess();
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x0a1e2b, 0.015);
 
     const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
     camera.position.set(0, 10, 12);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.shadowMap.enabled = true;
+    renderer.setPixelRatio(window.devicePixelRatio);
     document.body.appendChild(renderer.domElement);
 
     const controls = new THREE.OrbitControls(camera, renderer.domElement);
     controls.target.set(0, 0, 0);
-    controls.maxPolarAngle = Math.PI / 2 - 0.05;
-    controls.enableDamping = true;
 
-    // --- 2. LIGHTING & ENVIRONMENT ---
-    // Increased ambient light so both sides stay brightly lit from all angles
-    scene.add(new THREE.AmbientLight(0xffffff, 1.5));
-    
-    const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
-    dirLight.position.set(6, 14, 8);
-    dirLight.castShadow = true;
+    // Bright lighting setup
+    scene.add(new THREE.AmbientLight(0xffffff, 1.2));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+    dirLight.position.set(5, 12, 8);
     scene.add(dirLight);
 
     const boardGroup = new THREE.Group();
@@ -78,14 +69,14 @@
     scene.add(piecesGroup);
     scene.add(highlightsGroup);
 
-    // Blue Water Lagoon Base
+    // Base Lagoon
     const lagoonGeo = new THREE.BoxGeometry(9.6, 1.5, 9.6);
     const lagoonMat = new THREE.MeshPhongMaterial({ color: 0x005577, transparent: true, opacity: 0.85 });
     const lagoon = new THREE.Mesh(lagoonGeo, lagoonMat);
     lagoon.position.y = -0.8;
     scene.add(lagoon);
 
-    // Glass Board Squares
+    // Glass Board
     const boardOffset = 3.5;
     const boardSquares = {};
 
@@ -102,26 +93,170 @@
         const squareName = String.fromCharCode(97 + col) + (8 - row);
 
         square.position.set(col - boardOffset, 0, row - boardOffset);
-        square.receiveShadow = true;
         square.userData = { squareName };
         boardGroup.add(square);
         boardSquares[squareName] = square;
       }
     }
 
-    // --- 3. NAMED ASSET LOADING SYSTEM ---
+    // Material definitions
+    const whiteMaterial = new THREE.MeshStandardMaterial({ color: 0xffb6c1, roughness: 0.2 }); // Light Pink
+    const blackMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2 }); // Bright White
+
+    // Loader logic with safe fallback
     const loader = new THREE.GLTFLoader();
     const pieceModels = {};
-    const pieceYOffsets = {};
+    const modelFiles = { p: 'pawn.glb', n: 'knight.glb', b: 'bishop.glb', r: 'rook.glb', q: 'queen.glb', k: 'king.glb' };
 
-    const modelFiles = {
-      p: 'pawn.glb',
-      n: 'knight.glb',
-      b: 'bishop.glb',
-      r: 'rook.glb',
-      q: 'queen.glb',
-      k: 'king.glb'
-    };
+    function loadModels() {
+      let loadedCount = 0;
+      const types = Object.keys(modelFiles);
 
-    // Bright Team Materials: Light Pink vs Pure White (No Black/Dark Grey)
-    const whiteMaterial = new THREE.MeshStandardMaterial({ color: 0xffb6c1,
+      types.forEach((type) => {
+        loader.load(
+          `./${modelFiles[type]}`,
+          (gltf) => {
+            const model = gltf.scene;
+            const box = new THREE.Box3().setFromObject(model);
+            const size = box.getSize(new THREE.Vector3());
+            const maxDim = Math.max(size.x, size.z);
+            if (maxDim > 0) {
+              const scale = 0.75 / maxDim;
+              model.scale.set(scale, scale, scale);
+            }
+            pieceModels[type] = model;
+            checkDone();
+          },
+          undefined,
+          () => {
+            // Safe fallback if specific glb isn't uploaded yet
+            if (type !== 'p' && pieceModels['p']) {
+              pieceModels[type] = pieceModels['p'].clone();
+            }
+            checkDone();
+          }
+        );
+      });
+
+      function checkDone() {
+        loadedCount++;
+        if (loadedCount === types.length) {
+          renderPieces();
+        }
+      }
+    }
+
+    function renderPieces() {
+      while (piecesGroup.children.length > 0) {
+        piecesGroup.remove(piecesGroup.children[0]);
+      }
+
+      const boardState = game.board();
+      for (let row = 0; row < 8; row++) {
+        for (let col = 0; col < 8; col++) {
+          const piece = boardState[row][col];
+          if (piece && pieceModels[piece.type]) {
+            const pieceMesh = pieceModels[piece.type].clone(true);
+            const mat = piece.color === 'w' ? whiteMaterial : blackMaterial;
+
+            pieceMesh.traverse((child) => {
+              if (child.isMesh) child.material = mat;
+            });
+
+            if (piece.color === 'b') pieceMesh.rotation.y = Math.PI;
+
+            pieceMesh.position.set(col - boardOffset, 0.05, row - boardOffset);
+            pieceMesh.userData = { squareName: String.fromCharCode(97 + col) + (8 - row) };
+            piecesGroup.add(pieceMesh);
+          }
+        }
+      }
+    }
+
+    // Interactive Controls
+    let selectedSquare = null;
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+
+    function clearHighlights() {
+      while (highlightsGroup.children.length > 0) {
+        highlightsGroup.remove(highlightsGroup.children[0]);
+      }
+    }
+
+    function highlightSquare(squareName, colorHex) {
+      const target = boardSquares[squareName];
+      if (!target) return;
+      const highlightGeo = new THREE.PlaneGeometry(0.9, 0.9);
+      const highlightMat = new THREE.MeshBasicMaterial({ color: colorHex, side: THREE.DoubleSide, transparent: true, opacity: 0.6 });
+      const mesh = new THREE.Mesh(highlightGeo, highlightMat);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.set(target.position.x, 0.06, target.position.z);
+      highlightsGroup.add(mesh);
+    }
+
+    window.addEventListener('click', (event) => {
+      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObjects([...boardGroup.children, ...piecesGroup.children], true);
+
+      if (intersects.length > 0) {
+        let clickedObject = intersects[0].object;
+        while (clickedObject.parent && clickedObject.parent !== boardGroup && clickedObject.parent !== piecesGroup) {
+          clickedObject = clickedObject.parent;
+        }
+
+        const squareName = clickedObject.userData.squareName;
+
+        if (selectedSquare) {
+          const move = game.move({ from: selectedSquare, to: squareName, promotion: 'q' });
+          if (move) {
+            selectedSquare = null;
+            clearHighlights();
+            renderPieces();
+            updateStatus();
+            return;
+          }
+        }
+
+        const piece = game.get(squareName);
+        if (piece && piece.color === game.turn()) {
+          selectedSquare = squareName;
+          clearHighlights();
+          highlightSquare(squareName, 0xffff00);
+          const moves = game.moves({ square: squareName, verbose: true });
+          moves.forEach((m) => highlightSquare(m.to, 0x00ff00));
+        } else {
+          selectedSquare = null;
+          clearHighlights();
+        }
+      }
+    });
+
+    function updateStatus() {
+      const statusEl = document.getElementById('status');
+      let statusText = game.turn() === 'w' ? 'Pink Team' : 'White Team';
+      if (game.in_check()) statusText += ' - CHECK!';
+      if (game.in_checkmate()) statusText = 'Game Over - Checkmate!';
+      statusEl.textContent = statusText;
+    }
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    loadModels();
+
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+  </script>
+</body>
+</html>
