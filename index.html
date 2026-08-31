@@ -64,7 +64,7 @@
 
     // --- 2. LIGHTING & ENVIRONMENT ---
     scene.add(new THREE.AmbientLight(0xffffff, 0.8));
-    const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
     dirLight.position.set(6, 14, 8);
     dirLight.castShadow = true;
     scene.add(dirLight);
@@ -107,11 +107,10 @@
       }
     }
 
-    // --- 3. NAMED ASSET LOADING SYSTEM ---
+    // --- 3. NAMED ASSET LOADING SYSTEM WITH AUTO-SCALING ---
     const loader = new THREE.GLTFLoader();
-    const pieceModels = {}; 
+    const pieceModels = {};
 
-    // Filenames mapped by piece type
     const modelFiles = {
       p: 'pawn.glb',
       n: 'knight.glb',
@@ -121,24 +120,36 @@
       k: 'king.glb'
     };
 
-    const whiteMaterial = new THREE.MeshPhongMaterial({ color: 0xffb6c1, shininess: 90 });
-    const blackMaterial = new THREE.MeshPhongMaterial({ color: 0x990055, shininess: 90 });
+    const whiteMaterial = new THREE.MeshStandardMaterial({ color: 0xffb6c1, roughness: 0.2, metalness: 0.1 });
+    const blackMaterial = new THREE.MeshStandardMaterial({ color: 0x8b005d, roughness: 0.2, metalness: 0.2 });
 
     async function loadAllPieceModels() {
       const loadPromises = Object.entries(modelFiles).map(([type, fileName]) => {
         return new Promise((resolve) => {
           loader.load(`./${fileName}`, 
             (gltf) => {
-              pieceModels[type] = gltf.scene;
+              const model = gltf.scene;
+              
+              // Normalize Scale: Bounding box check to prevent oversized models
+              const box = new THREE.Box3().setFromObject(model);
+              const size = box.getSize(new THREE.Vector3());
+              const maxDim = Math.max(size.x, size.z);
+              
+              if (maxDim > 0) {
+                const targetScale = 0.75 / maxDim; // Fit inside 0.75 units of 1x1 tile
+                model.scale.set(targetScale, targetScale, targetScale);
+              }
+
+              pieceModels[type] = model;
               resolve();
             },
             undefined,
             () => {
-              // Graceful fallback to pawn.glb if specific piece model is not uploaded yet
-              loader.load('./pawn.glb', (fallbackGltf) => {
-                pieceModels[type] = fallbackGltf.scene;
-                resolve();
-              });
+              // Fallback to pawn.glb if missing specific model
+              if (type !== 'p' && pieceModels['p']) {
+                pieceModels[type] = pieceModels['p'].clone(true);
+              }
+              resolve();
             }
           );
         });
@@ -159,11 +170,12 @@
           const piece = boardState[row][col];
           if (piece && pieceModels[piece.type]) {
             const pieceMesh = pieceModels[piece.type].clone(true);
-            const mat = piece.color === 'w' ? whiteMaterial : blackMaterial;
+            const targetMaterial = piece.color === 'w' ? whiteMaterial : blackMaterial;
 
+            // Force override embedded materials and enable shadows
             pieceMesh.traverse((child) => {
               if (child.isMesh) {
-                child.material = mat;
+                child.material = targetMaterial;
                 child.castShadow = true;
                 child.receiveShadow = true;
               }
@@ -171,7 +183,8 @@
 
             if (piece.color === 'b') pieceMesh.rotation.y = Math.PI;
 
-            pieceMesh.position.set(col - boardOffset, 0.05, row - boardOffset);
+            // Elevated position so base rests cleanly on the glass board
+            pieceMesh.position.set(col - boardOffset, 0.06, row - boardOffset);
             pieceMesh.userData = { squareName: String.fromCharCode(97 + col) + (8 - row) };
             piecesGroup.add(pieceMesh);
           }
@@ -179,7 +192,7 @@
       }
     }
 
-    // --- 4. GAME CONTROLS & SELECTION ---
+    // --- 4. CONTROLS & GAMEPLAY ---
     let selectedSquare = null;
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
@@ -197,7 +210,7 @@
       const highlightMat = new THREE.MeshBasicMaterial({ color: colorHex, side: THREE.DoubleSide, transparent: true, opacity: 0.6 });
       const mesh = new THREE.Mesh(highlightGeo, highlightMat);
       mesh.rotation.x = -Math.PI / 2;
-      mesh.position.set(target.position.x, 0.06, target.position.z);
+      mesh.position.set(target.position.x, 0.07, target.position.z);
       highlightsGroup.add(mesh);
     }
 
@@ -255,10 +268,8 @@
       renderer.setSize(window.innerWidth, window.innerHeight);
     });
 
-    // Initialize asset preloading
     loadAllPieceModels();
 
-    // Render loop
     function animate() {
       requestAnimationFrame(animate);
       controls.update();
