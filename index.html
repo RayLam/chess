@@ -8,7 +8,7 @@
     body {
       margin: 0;
       overflow: hidden;
-      background: radial-gradient(circle at center, #0a1e2b 0%, #02080c 100%);
+      background: #02080c;
       font-family: Arial, sans-serif;
     }
     #info {
@@ -42,6 +42,7 @@
   </div>
 
   <script>
+    // --- 1. ENGINE & SCENE SETUP ---
     const game = new Chess();
     const scene = new THREE.Scene();
 
@@ -52,28 +53,23 @@
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     document.body.appendChild(renderer.domElement);
 
     const controls = new THREE.OrbitControls(camera, renderer.domElement);
     controls.target.set(0, 0, 0);
     controls.enableDamping = true;
 
-    // --- ENHANCED 3D LIGHTING SETUP ---
-    scene.add(new THREE.AmbientLight(0xdff4ff, 0.8)); // Soft cyan ambient light
+    // --- 2. LIGHTING SETUP ---
+    scene.add(new THREE.AmbientLight(0xffffff, 1.2));
 
-    // Key Light for crisp highlights
-    const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
+    const keyLight = new THREE.DirectionalLight(0xffffff, 1.0);
     keyLight.position.set(5, 12, 8);
     keyLight.castShadow = true;
-    keyLight.shadow.mapSize.width = 2048;
-    keyLight.shadow.mapSize.height = 2048;
     scene.add(keyLight);
 
-    // Rim Light to outline piece edges against the dark background
-    const rimLight = new THREE.DirectionalLight(0x00e5ff, 0.8);
-    rimLight.position.set(-8, 6, -8);
-    scene.add(rimLight);
+    const fillLight = new THREE.DirectionalLight(0x00e5ff, 0.5);
+    fillLight.position.set(-5, 6, -5);
+    scene.add(fillLight);
 
     const boardGroup = new THREE.Group();
     const piecesGroup = new THREE.Group();
@@ -113,27 +109,20 @@
       }
     }
 
-    // --- HIGH-DETAIL PHYSICAL MATERIALS ---
-    // Soft Pearl Pink (Light Team) with Clearcoat Gloss
-    const whiteMaterial = new THREE.MeshPhysicalMaterial({
+    // --- 3. PHYSICAL SHADOW MATERIALS ---
+    const whiteMaterial = new THREE.MeshStandardMaterial({
       color: 0xffa3c4,
-      roughness: 0.15,
-      metalness: 0.1,
-      clearcoat: 1.0,
-      clearcoatRoughness: 0.05,
-      reflectivity: 0.9
+      roughness: 0.2,
+      metalness: 0.1
     });
 
-    // Deep Magenta Pink (Dark Team) with Clearcoat Gloss
-    const blackMaterial = new THREE.MeshPhysicalMaterial({
+    const blackMaterial = new THREE.MeshStandardMaterial({
       color: 0x99004d,
-      roughness: 0.15,
-      metalness: 0.15,
-      clearcoat: 1.0,
-      clearcoatRoughness: 0.05,
-      reflectivity: 0.9
+      roughness: 0.2,
+      metalness: 0.1
     });
 
+    // --- 4. SAFE MODEL LOADING ---
     const loader = new THREE.GLTFLoader();
     const pieceModels = {};
     const modelFiles = { p: 'pawn.glb', n: 'knight.glb', b: 'bishop.glb', r: 'rook.glb', q: 'queen.glb', k: 'king.glb' };
@@ -160,32 +149,39 @@
     }
 
     function loadAllModels() {
-      loader.load('./pawn.glb', (pawnGltf) => {
-        const basePawnModel = normalizeAndCenterModel(pawnGltf.scene);
-        pieceModels['p'] = basePawnModel;
+      loader.load(
+        './pawn.glb',
+        (pawnGltf) => {
+          const basePawnModel = normalizeAndCenterModel(pawnGltf.scene);
+          pieceModels['p'] = basePawnModel;
 
-        const types = ['n', 'b', 'r', 'q', 'k'];
-        let loadedCount = 0;
+          const types = ['n', 'b', 'r', 'q', 'k'];
+          let loadedCount = 0;
 
-        types.forEach((type) => {
-          loader.load(
-            `./${modelFiles[type]}`,
-            (gltf) => {
-              pieceModels[type] = normalizeAndCenterModel(gltf.scene);
-              loadedCount++;
-              if (loadedCount === types.length) renderPieces();
-            },
-            undefined,
-            () => {
-              pieceModels[type] = basePawnModel.clone(true);
-              loadedCount++;
-              if (loadedCount === types.length) renderPieces();
-            }
-          );
-        });
+          types.forEach((type) => {
+            loader.load(
+              `./${modelFiles[type]}`,
+              (gltf) => {
+                pieceModels[type] = normalizeAndCenterModel(gltf.scene);
+                loadedCount++;
+                if (loadedCount === types.length) renderPieces();
+              },
+              undefined,
+              () => {
+                pieceModels[type] = basePawnModel.clone(true);
+                loadedCount++;
+                if (loadedCount === types.length) renderPieces();
+              }
+            );
+          });
 
-        renderPieces();
-      });
+          renderPieces();
+        },
+        undefined,
+        (err) => {
+          console.error("Error loading pawn.glb:", err);
+        }
+      );
     }
 
     function renderPieces() {
@@ -210,105 +206,4 @@
             });
 
             pieceMesh.rotation.y = piece.color === 'w' ? Math.PI / 2 : -Math.PI / 2;
-            pieceMesh.position.set(col - boardOffset, 0.05, row - boardOffset);
-            pieceMesh.userData = { squareName: String.fromCharCode(97 + col) + (8 - row), baseRow: row, baseCol: col };
-            piecesGroup.add(pieceMesh);
-          }
-        }
-      }
-    }
-
-    // Interaction Logic
-    let selectedSquare = null;
-    const raycaster = new THREE.Raycaster();
-    const mouse = new THREE.Vector2();
-
-    function clearHighlights() {
-      while (highlightsGroup.children.length > 0) {
-        highlightsGroup.remove(highlightsGroup.children[0]);
-      }
-    }
-
-    function highlightSquare(squareName, colorHex) {
-      const target = boardSquares[squareName];
-      if (!target) return;
-      const highlightGeo = new THREE.PlaneGeometry(0.9, 0.9);
-      const highlightMat = new THREE.MeshBasicMaterial({ color: colorHex, side: THREE.DoubleSide, transparent: true, opacity: 0.6 });
-      const mesh = new THREE.Mesh(highlightGeo, highlightMat);
-      mesh.rotation.x = -Math.PI / 2;
-      mesh.position.set(target.position.x, 0.06, target.position.z);
-      highlightsGroup.add(mesh);
-    }
-
-    window.addEventListener('click', (event) => {
-      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-
-      raycaster.setFromCamera(mouse, camera);
-      const intersects = raycaster.intersectObjects([...boardGroup.children, ...piecesGroup.children], true);
-
-      if (intersects.length > 0) {
-        let clickedObject = intersects[0].object;
-        while (clickedObject.parent && clickedObject.parent !== boardGroup && clickedObject.parent !== piecesGroup) {
-          clickedObject = clickedObject.parent;
-        }
-
-        const squareName = clickedObject.userData.squareName;
-
-        if (selectedSquare) {
-          const move = game.move({ from: selectedSquare, to: squareName, promotion: 'q' });
-          if (move) {
-            selectedSquare = null;
-            clearHighlights();
-            renderPieces();
-            updateStatus();
-            return;
-          }
-        }
-
-        const piece = game.get(squareName);
-        if (piece && piece.color === game.turn()) {
-          selectedSquare = squareName;
-          clearHighlights();
-          highlightSquare(squareName, 0xffff00);
-          const moves = game.moves({ square: squareName, verbose: true });
-          moves.forEach((m) => highlightSquare(m.to, 0x00ff00));
-        } else {
-          selectedSquare = null;
-          clearHighlights();
-        }
-      }
-    });
-
-    function updateStatus() {
-      const statusEl = document.getElementById('status');
-      let statusText = game.turn() === 'w' ? 'Light Pink Team' : 'Deep Pink Team';
-      if (game.in_check()) statusText += ' - CHECK!';
-      if (game.in_checkmate()) statusText = 'Game Over - Checkmate!';
-      statusEl.textContent = statusText;
-    }
-
-    window.addEventListener('resize', () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-    });
-
-    loadAllModels();
-
-    // Render loop with subtle ocean bobbing animation
-    function animate() {
-      requestAnimationFrame(animate);
-      
-      const time = Date.now() * 0.0025;
-      piecesGroup.children.forEach((piece, idx) => {
-        piece.position.y = 0.05 + Math.sin(time + idx * 0.4) * 0.015;
-      });
-
-      controls.update();
-      renderer.render(scene, camera);
-    }
-    animate();
-  </script>
-</body>
-</html>
+            pieceMesh
