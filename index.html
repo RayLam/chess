@@ -38,7 +38,7 @@
 
   <div id="info">
     <h2 style="margin:0 0 4px 0;">Aquatic Dolphin Chess</h2>
-    <p style="margin:0;">Turn: <span id="status">Pink Team</span></p>
+    <p style="margin:0;">Turn: <span id="status">Light Pink Team</span></p>
   </div>
 
   <script>
@@ -58,8 +58,8 @@
     controls.target.set(0, 0, 0);
     controls.enableDamping = true;
 
-    // Lighting
-    scene.add(new THREE.AmbientLight(0xffffff, 1.4));
+    // Bright Ambient + Directional Lighting
+    scene.add(new THREE.AmbientLight(0xffffff, 1.5));
     const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
     dirLight.position.set(6, 14, 8);
     dirLight.castShadow = true;
@@ -102,15 +102,25 @@
       }
     }
 
-    // Team Materials (Light Pink vs White)
-    const whiteMaterial = new THREE.MeshStandardMaterial({ color: 0xffb6c1, roughness: 0.2, metalness: 0.1 });
-    const blackMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2, metalness: 0.1 });
+    // --- PINK TEAM MATERIALS ---
+    // White Team: Soft Pearl Light Pink
+    const whiteMaterial = new THREE.MeshStandardMaterial({ 
+      color: 0xffb6c1, 
+      roughness: 0.2, 
+      metalness: 0.1 
+    });
+
+    // Black Team: Bright Deep Hot Pink / Magenta
+    const blackMaterial = new THREE.MeshStandardMaterial({ 
+      color: 0xff007f, 
+      roughness: 0.2, 
+      metalness: 0.1 
+    });
 
     const loader = new THREE.GLTFLoader();
     const pieceModels = {};
     const modelFiles = { p: 'pawn.glb', n: 'knight.glb', b: 'bishop.glb', r: 'rook.glb', q: 'queen.glb', k: 'king.glb' };
 
-    // Function to center GLTF model mesh at geometric origin (0,0,0)
     function normalizeAndCenterModel(model) {
       const wrapper = new THREE.Group();
       wrapper.add(model);
@@ -119,7 +129,6 @@
       const center = box.getCenter(new THREE.Vector3());
       const size = box.getSize(new THREE.Vector3());
 
-      // Center horizontally & sit flat on bottom Y
       model.position.x -= center.x;
       model.position.z -= center.z;
       model.position.y -= box.min.y;
@@ -134,7 +143,6 @@
     }
 
     function loadAllModels() {
-      // First load pawn.glb to ensure a base template exists for missing pieces
       loader.load('./pawn.glb', (pawnGltf) => {
         const basePawnModel = normalizeAndCenterModel(pawnGltf.scene);
         pieceModels['p'] = basePawnModel;
@@ -152,7 +160,6 @@
             },
             undefined,
             () => {
-              // Fallback to base pawn model if file does not exist yet
               pieceModels[type] = basePawnModel.clone(true);
               loadedCount++;
               if (loadedCount === types.length) renderPieces();
@@ -160,7 +167,7 @@
           );
         });
 
-        renderPieces(); // Initial render with available models
+        renderPieces();
       });
     }
 
@@ -179,6 +186,11 @@
 
             pieceMesh.traverse((child) => {
               if (child.isMesh) {
+                // Strip embedded textures so the pink colors apply properly
+                if (child.material) {
+                  child.material.map = null;
+                  child.material.needsUpdate = true;
+                }
                 child.material = targetMaterial;
                 child.castShadow = true;
                 child.receiveShadow = true;
@@ -195,7 +207,7 @@
       }
     }
 
-    // Move & Interaction Logic
+    // Interaction Logic
     let selectedSquare = null;
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
@@ -259,7 +271,7 @@
 
     function updateStatus() {
       const statusEl = document.getElementById('status');
-      let statusText = game.turn() === 'w' ? 'Pink Team' : 'White Team';
+      let statusText = game.turn() === 'w' ? 'Light Pink Team' : 'Hot Pink Team';
       if (game.in_check()) statusText += ' - CHECK!';
       if (game.in_checkmate()) statusText = 'Game Over - Checkmate!';
       statusEl.textContent = statusText;
