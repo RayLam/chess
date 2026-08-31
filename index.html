@@ -8,7 +8,7 @@
     body {
       margin: 0;
       overflow: hidden;
-      background: #02080c;
+      background: radial-gradient(circle at center, #0a1e2b 0%, #02080c 100%);
       font-family: Arial, sans-serif;
     }
     #info {
@@ -19,7 +19,7 @@
       background: rgba(5, 20, 30, 0.85);
       padding: 12px 18px;
       border-radius: 8px;
-      border: 1px solid #00e5ff;
+      border: 1px solid #00e5ff44;
       pointer-events: none;
       z-index: 100;
     }
@@ -50,16 +50,19 @@
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
     document.body.appendChild(renderer.domElement);
 
     const controls = new THREE.OrbitControls(camera, renderer.domElement);
     controls.target.set(0, 0, 0);
+    controls.enableDamping = true;
 
-    // Bright lighting setup
-    scene.add(new THREE.AmbientLight(0xffffff, 1.2));
+    // Lighting
+    scene.add(new THREE.AmbientLight(0xffffff, 1.4));
     const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
-    dirLight.position.set(5, 12, 8);
+    dirLight.position.set(6, 14, 8);
+    dirLight.castShadow = true;
     scene.add(dirLight);
 
     const boardGroup = new THREE.Group();
@@ -69,7 +72,7 @@
     scene.add(piecesGroup);
     scene.add(highlightsGroup);
 
-    // Base Lagoon
+    // Lagoon Base
     const lagoonGeo = new THREE.BoxGeometry(9.6, 1.5, 9.6);
     const lagoonMat = new THREE.MeshPhongMaterial({ color: 0x005577, transparent: true, opacity: 0.85 });
     const lagoon = new THREE.Mesh(lagoonGeo, lagoonMat);
@@ -99,51 +102,66 @@
       }
     }
 
-    // Material definitions
-    const whiteMaterial = new THREE.MeshStandardMaterial({ color: 0xffb6c1, roughness: 0.2 }); // Light Pink
-    const blackMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2 }); // Bright White
+    // Team Materials (Light Pink vs White)
+    const whiteMaterial = new THREE.MeshStandardMaterial({ color: 0xffb6c1, roughness: 0.2, metalness: 0.1 });
+    const blackMaterial = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2, metalness: 0.1 });
 
-    // Loader logic with safe fallback
     const loader = new THREE.GLTFLoader();
     const pieceModels = {};
     const modelFiles = { p: 'pawn.glb', n: 'knight.glb', b: 'bishop.glb', r: 'rook.glb', q: 'queen.glb', k: 'king.glb' };
 
-    function loadModels() {
-      let loadedCount = 0;
-      const types = Object.keys(modelFiles);
+    // Function to center GLTF model mesh at geometric origin (0,0,0)
+    function normalizeAndCenterModel(model) {
+      const wrapper = new THREE.Group();
+      wrapper.add(model);
 
-      types.forEach((type) => {
-        loader.load(
-          `./${modelFiles[type]}`,
-          (gltf) => {
-            const model = gltf.scene;
-            const box = new THREE.Box3().setFromObject(model);
-            const size = box.getSize(new THREE.Vector3());
-            const maxDim = Math.max(size.x, size.z);
-            if (maxDim > 0) {
-              const scale = 0.75 / maxDim;
-              model.scale.set(scale, scale, scale);
-            }
-            pieceModels[type] = model;
-            checkDone();
-          },
-          undefined,
-          () => {
-            // Safe fallback if specific glb isn't uploaded yet
-            if (type !== 'p' && pieceModels['p']) {
-              pieceModels[type] = pieceModels['p'].clone();
-            }
-            checkDone();
-          }
-        );
-      });
+      const box = new THREE.Box3().setFromObject(model);
+      const center = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3());
 
-      function checkDone() {
-        loadedCount++;
-        if (loadedCount === types.length) {
-          renderPieces();
-        }
+      // Center horizontally & sit flat on bottom Y
+      model.position.x -= center.x;
+      model.position.z -= center.z;
+      model.position.y -= box.min.y;
+
+      const maxDim = Math.max(size.x, size.z);
+      if (maxDim > 0) {
+        const scale = 0.7 / maxDim;
+        wrapper.scale.set(scale, scale, scale);
       }
+
+      return wrapper;
+    }
+
+    function loadAllModels() {
+      // First load pawn.glb to ensure a base template exists for missing pieces
+      loader.load('./pawn.glb', (pawnGltf) => {
+        const basePawnModel = normalizeAndCenterModel(pawnGltf.scene);
+        pieceModels['p'] = basePawnModel;
+
+        const types = ['n', 'b', 'r', 'q', 'k'];
+        let loadedCount = 0;
+
+        types.forEach((type) => {
+          loader.load(
+            `./${modelFiles[type]}`,
+            (gltf) => {
+              pieceModels[type] = normalizeAndCenterModel(gltf.scene);
+              loadedCount++;
+              if (loadedCount === types.length) renderPieces();
+            },
+            undefined,
+            () => {
+              // Fallback to base pawn model if file does not exist yet
+              pieceModels[type] = basePawnModel.clone(true);
+              loadedCount++;
+              if (loadedCount === types.length) renderPieces();
+            }
+          );
+        });
+
+        renderPieces(); // Initial render with available models
+      });
     }
 
     function renderPieces() {
@@ -157,10 +175,14 @@
           const piece = boardState[row][col];
           if (piece && pieceModels[piece.type]) {
             const pieceMesh = pieceModels[piece.type].clone(true);
-            const mat = piece.color === 'w' ? whiteMaterial : blackMaterial;
+            const targetMaterial = piece.color === 'w' ? whiteMaterial : blackMaterial;
 
             pieceMesh.traverse((child) => {
-              if (child.isMesh) child.material = mat;
+              if (child.isMesh) {
+                child.material = targetMaterial;
+                child.castShadow = true;
+                child.receiveShadow = true;
+              }
             });
 
             if (piece.color === 'b') pieceMesh.rotation.y = Math.PI;
@@ -173,7 +195,7 @@
       }
     }
 
-    // Interactive Controls
+    // Move & Interaction Logic
     let selectedSquare = null;
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
@@ -249,7 +271,7 @@
       renderer.setSize(window.innerWidth, window.innerHeight);
     });
 
-    loadModels();
+    loadAllModels();
 
     function animate() {
       requestAnimationFrame(animate);
