@@ -39,7 +39,7 @@
 
   <div id="info">
     <h2 style="margin:0 0 6px 0; font-size: 1.3em;">Aquatic Dolphin Chess</h2>
-    <p style="margin:0;">Turn: <span id="status">White (Light Pink)</span></p>
+    <p style="margin:0;">Turn: <span id="status">Pink Team</span></p>
   </div>
 
   <script>
@@ -63,7 +63,9 @@
     controls.enableDamping = true;
 
     // --- 2. LIGHTING & ENVIRONMENT ---
-    scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+    // Increased ambient light so both sides stay brightly lit from all angles
+    scene.add(new THREE.AmbientLight(0xffffff, 1.5));
+    
     const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
     dirLight.position.set(6, 14, 8);
     dirLight.castShadow = true;
@@ -107,9 +109,10 @@
       }
     }
 
-    // --- 3. NAMED ASSET LOADING SYSTEM WITH AUTO-SCALING ---
+    // --- 3. NAMED ASSET LOADING SYSTEM ---
     const loader = new THREE.GLTFLoader();
     const pieceModels = {};
+    const pieceYOffsets = {};
 
     const modelFiles = {
       p: 'pawn.glb',
@@ -120,162 +123,5 @@
       k: 'king.glb'
     };
 
-    const whiteMaterial = new THREE.MeshStandardMaterial({ color: 0xffb6c1, roughness: 0.2, metalness: 0.1 });
-    const blackMaterial = new THREE.MeshStandardMaterial({ color: 0x8b005d, roughness: 0.2, metalness: 0.2 });
-
-    async function loadAllPieceModels() {
-      const loadPromises = Object.entries(modelFiles).map(([type, fileName]) => {
-        return new Promise((resolve) => {
-          loader.load(`./${fileName}`, 
-            (gltf) => {
-              const model = gltf.scene;
-              
-              // Normalize Scale: Bounding box check to prevent oversized models
-              const box = new THREE.Box3().setFromObject(model);
-              const size = box.getSize(new THREE.Vector3());
-              const maxDim = Math.max(size.x, size.z);
-              
-              if (maxDim > 0) {
-                const targetScale = 0.75 / maxDim; // Fit inside 0.75 units of 1x1 tile
-                model.scale.set(targetScale, targetScale, targetScale);
-              }
-
-              pieceModels[type] = model;
-              resolve();
-            },
-            undefined,
-            () => {
-              // Fallback to pawn.glb if missing specific model
-              if (type !== 'p' && pieceModels['p']) {
-                pieceModels[type] = pieceModels['p'].clone(true);
-              }
-              resolve();
-            }
-          );
-        });
-      });
-
-      await Promise.all(loadPromises);
-      renderPieces();
-    }
-
-    function renderPieces() {
-      while (piecesGroup.children.length > 0) {
-        piecesGroup.remove(piecesGroup.children[0]);
-      }
-
-      const boardState = game.board();
-      for (let row = 0; row < 8; row++) {
-        for (let col = 0; col < 8; col++) {
-          const piece = boardState[row][col];
-          if (piece && pieceModels[piece.type]) {
-            const pieceMesh = pieceModels[piece.type].clone(true);
-            const targetMaterial = piece.color === 'w' ? whiteMaterial : blackMaterial;
-
-            // Force override embedded materials and enable shadows
-            pieceMesh.traverse((child) => {
-              if (child.isMesh) {
-                child.material = targetMaterial;
-                child.castShadow = true;
-                child.receiveShadow = true;
-              }
-            });
-
-            if (piece.color === 'b') pieceMesh.rotation.y = Math.PI;
-
-            // Elevated position so base rests cleanly on the glass board
-            pieceMesh.position.set(col - boardOffset, 0.06, row - boardOffset);
-            pieceMesh.userData = { squareName: String.fromCharCode(97 + col) + (8 - row) };
-            piecesGroup.add(pieceMesh);
-          }
-        }
-      }
-    }
-
-    // --- 4. CONTROLS & GAMEPLAY ---
-    let selectedSquare = null;
-    const raycaster = new THREE.Raycaster();
-    const mouse = new THREE.Vector2();
-
-    function clearHighlights() {
-      while (highlightsGroup.children.length > 0) {
-        highlightsGroup.remove(highlightsGroup.children[0]);
-      }
-    }
-
-    function highlightSquare(squareName, colorHex) {
-      const target = boardSquares[squareName];
-      if (!target) return;
-      const highlightGeo = new THREE.PlaneGeometry(0.9, 0.9);
-      const highlightMat = new THREE.MeshBasicMaterial({ color: colorHex, side: THREE.DoubleSide, transparent: true, opacity: 0.6 });
-      const mesh = new THREE.Mesh(highlightGeo, highlightMat);
-      mesh.rotation.x = -Math.PI / 2;
-      mesh.position.set(target.position.x, 0.07, target.position.z);
-      highlightsGroup.add(mesh);
-    }
-
-    window.addEventListener('click', (event) => {
-      mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
-      mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
-
-      raycaster.setFromCamera(mouse, camera);
-      const intersects = raycaster.intersectObjects([...boardGroup.children, ...piecesGroup.children], true);
-
-      if (intersects.length > 0) {
-        let clickedObject = intersects[0].object;
-        while (clickedObject.parent && clickedObject.parent !== boardGroup && clickedObject.parent !== piecesGroup) {
-          clickedObject = clickedObject.parent;
-        }
-
-        const squareName = clickedObject.userData.squareName;
-
-        if (selectedSquare) {
-          const move = game.move({ from: selectedSquare, to: squareName, promotion: 'q' });
-          if (move) {
-            selectedSquare = null;
-            clearHighlights();
-            renderPieces();
-            updateStatus();
-            return;
-          }
-        }
-
-        const piece = game.get(squareName);
-        if (piece && piece.color === game.turn()) {
-          selectedSquare = squareName;
-          clearHighlights();
-          highlightSquare(squareName, 0xffff00);
-          const moves = game.moves({ square: squareName, verbose: true });
-          moves.forEach((m) => highlightSquare(m.to, 0x00ff00));
-        } else {
-          selectedSquare = null;
-          clearHighlights();
-        }
-      }
-    });
-
-    function updateStatus() {
-      const statusEl = document.getElementById('status');
-      let statusText = game.turn() === 'w' ? 'White (Light Pink)' : 'Magenta (Dark Pink)';
-      if (game.in_check()) statusText += ' - CHECK!';
-      if (game.in_checkmate()) statusText = 'Game Over - Checkmate!';
-      statusEl.textContent = statusText;
-    }
-
-    window.addEventListener('resize', () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-    });
-
-    loadAllPieceModels();
-
-    function animate() {
-      requestAnimationFrame(animate);
-      controls.update();
-      renderer.render(scene, camera);
-    }
-    animate();
-  </script>
-</body>
-</html>
+    // Bright Team Materials: Light Pink vs Pure White (No Black/Dark Grey)
+    const whiteMaterial = new THREE.MeshStandardMaterial({ color: 0xffb6c1,
