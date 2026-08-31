@@ -58,9 +58,9 @@
     controls.target.set(0, 0, 0);
     controls.enableDamping = true;
 
-    // Bright Ambient + Directional Lighting
-    scene.add(new THREE.AmbientLight(0xffffff, 1.5));
-    const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+    // Soft Ambient + Tinted Directional Lighting
+    scene.add(new THREE.AmbientLight(0xffffff, 1.0));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.7);
     dirLight.position.set(6, 14, 8);
     dirLight.castShadow = true;
     scene.add(dirLight);
@@ -102,20 +102,12 @@
       }
     }
 
-    // --- PINK TEAM MATERIALS ---
-    // White Team: Soft Pearl Light Pink
-    const whiteMaterial = new THREE.MeshStandardMaterial({ 
-      color: 0xffb6c1, 
-      roughness: 0.2, 
-      metalness: 0.1 
-    });
+    // --- ACCURATE DUAL PINK MATERIALS ---
+    // White Team: Distinct Soft Baby Pink (No Washout)
+    const whiteMaterial = new THREE.MeshLambertMaterial({ color: 0xff66a3 });
 
-    // Black Team: Bright Deep Hot Pink / Magenta
-    const blackMaterial = new THREE.MeshStandardMaterial({ 
-      color: 0xff007f, 
-      roughness: 0.2, 
-      metalness: 0.1 
-    });
+    // Black Team: Vibrant Deep Hot Pink / Magenta
+    const blackMaterial = new THREE.MeshLambertMaterial({ color: 0xb30059 });
 
     const loader = new THREE.GLTFLoader();
     const pieceModels = {};
@@ -186,11 +178,6 @@
 
             pieceMesh.traverse((child) => {
               if (child.isMesh) {
-                // Strip embedded textures so the pink colors apply properly
-                if (child.material) {
-                  child.material.map = null;
-                  child.material.needsUpdate = true;
-                }
                 child.material = targetMaterial;
                 child.castShadow = true;
                 child.receiveShadow = true;
