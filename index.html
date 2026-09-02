@@ -65,10 +65,6 @@
     keyLight.castShadow = true;
     scene.add(keyLight);
 
-    const fillLight = new THREE.DirectionalLight(0x00e5ff, 0.5);
-    fillLight.position.set(-5, 6, -5);
-    scene.add(fillLight);
-
     const boardGroup = new THREE.Group();
     const piecesGroup = new THREE.Group();
     const highlightsGroup = new THREE.Group();
@@ -100,7 +96,6 @@
         const squareName = String.fromCharCode(97 + col) + (8 - row);
 
         square.position.set(col - boardOffset, 0, row - boardOffset);
-        square.receiveShadow = true;
         square.userData = { squareName };
         boardGroup.add(square);
         boardSquares[squareName] = square;
@@ -136,30 +131,33 @@
       return wrapper;
     }
 
-    // Safe Non-Blocking Loader
+    // Isolated loading logic with automatic pawn fallback
     function loadAllModels() {
-      const entries = Object.entries(modelFiles);
-      let loadedCount = 0;
+      loader.load('./pawn.glb', (pawnGltf) => {
+        const basePawnModel = normalizeAndCenterModel(pawnGltf.scene);
+        pieceModels['p'] = basePawnModel;
 
-      entries.forEach(([type, fileName]) => {
-        loader.load(
-          `./${fileName}`,
-          (gltf) => {
-            pieceModels[type] = normalizeAndCenterModel(gltf.scene);
-            loadedCount++;
-            if (loadedCount === entries.length) renderPieces();
-          },
-          undefined,
-          (err) => {
-            console.warn(`Could not load ./${fileName}, using pawn fallback:`, err);
-            // Fallback to pawn.glb if a piece model is missing
-            if (pieceModels['p']) {
-              pieceModels[type] = pieceModels['p'].clone(true);
+        const types = ['n', 'b', 'r', 'q', 'k'];
+        let loadedCount = 0;
+
+        types.forEach((type) => {
+          loader.load(
+            `./${modelFiles[type]}`,
+            (gltf) => {
+              pieceModels[type] = normalizeAndCenterModel(gltf.scene);
+              loadedCount++;
+              if (loadedCount === types.length) renderPieces();
+            },
+            undefined,
+            () => {
+              pieceModels[type] = basePawnModel.clone(true);
+              loadedCount++;
+              if (loadedCount === types.length) renderPieces();
             }
-            loadedCount++;
-            if (loadedCount === entries.length) renderPieces();
-          }
-        );
+          );
+        });
+
+        renderPieces();
       });
     }
 
@@ -193,7 +191,7 @@
       }
     }
 
-    // Controls
+    // Interaction Controls
     let selectedSquare = null;
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
