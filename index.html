@@ -42,7 +42,6 @@
   </div>
 
   <script>
-    // --- 1. ENGINE & SCENE SETUP ---
     const game = new Chess();
     const scene = new THREE.Scene();
 
@@ -59,9 +58,8 @@
     controls.target.set(0, 0, 0);
     controls.enableDamping = true;
 
-    // --- 2. LIGHTING & ENVIRONMENT ---
+    // Lighting
     scene.add(new THREE.AmbientLight(0xffffff, 1.2));
-
     const keyLight = new THREE.DirectionalLight(0xffffff, 1.0);
     keyLight.position.set(5, 12, 8);
     keyLight.castShadow = true;
@@ -109,30 +107,13 @@
       }
     }
 
-    // --- 3. TEAM MATERIALS ---
-    const whiteMaterial = new THREE.MeshStandardMaterial({
-      color: 0xffa3c4,
-      roughness: 0.2,
-      metalness: 0.1
-    });
+    // Team Materials
+    const whiteMaterial = new THREE.MeshStandardMaterial({ color: 0xffa3c4, roughness: 0.2, metalness: 0.1 });
+    const blackMaterial = new THREE.MeshStandardMaterial({ color: 0x99004d, roughness: 0.2, metalness: 0.1 });
 
-    const blackMaterial = new THREE.MeshStandardMaterial({
-      color: 0x99004d,
-      roughness: 0.2,
-      metalness: 0.1
-    });
-
-    // --- 4. PRODUCTION MODEL LOADER ---
     const loader = new THREE.GLTFLoader();
     const pieceModels = {};
-    const modelFiles = {
-      p: 'pawn.glb',
-      n: 'knight.glb',
-      b: 'bishop.glb',
-      r: 'rook.glb',
-      q: 'queen.glb',
-      k: 'king.glb'
-    };
+    const modelFiles = { p: 'pawn.glb', n: 'knight.glb', b: 'bishop.glb', r: 'rook.glb', q: 'queen.glb', k: 'king.glb' };
 
     function normalizeAndCenterModel(model) {
       const wrapper = new THREE.Group();
@@ -155,18 +136,31 @@
       return wrapper;
     }
 
-    async function loadAllModels() {
-      const loadPromises = Object.entries(modelFiles).map(([type, fileName]) => {
-        return new Promise((resolve) => {
-          loader.load(`./${fileName}`, (gltf) => {
-            pieceModels[type] = normalizeAndCenterModel(gltf.scene);
-            resolve();
-          });
-        });
-      });
+    // Safe Non-Blocking Loader
+    function loadAllModels() {
+      const entries = Object.entries(modelFiles);
+      let loadedCount = 0;
 
-      await Promise.all(loadPromises);
-      renderPieces();
+      entries.forEach(([type, fileName]) => {
+        loader.load(
+          `./${fileName}`,
+          (gltf) => {
+            pieceModels[type] = normalizeAndCenterModel(gltf.scene);
+            loadedCount++;
+            if (loadedCount === entries.length) renderPieces();
+          },
+          undefined,
+          (err) => {
+            console.warn(`Could not load ./${fileName}, using pawn fallback:`, err);
+            // Fallback to pawn.glb if a piece model is missing
+            if (pieceModels['p']) {
+              pieceModels[type] = pieceModels['p'].clone(true);
+            }
+            loadedCount++;
+            if (loadedCount === entries.length) renderPieces();
+          }
+        );
+      });
     }
 
     function renderPieces() {
@@ -199,7 +193,7 @@
       }
     }
 
-    // --- 5. GAME CONTROLS & INTERACTION ---
+    // Controls
     let selectedSquare = null;
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
@@ -277,7 +271,6 @@
 
     loadAllModels();
 
-    // Render loop with subtle ocean float animation
     function animate() {
       requestAnimationFrame(animate);
 
