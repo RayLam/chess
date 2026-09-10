@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Aquatic Dolphin Chess</title>
+  <title>Aquatic Dolphin Chess - Human vs Computer</title>
   <style>
     body {
       margin: 0;
@@ -38,7 +38,8 @@
 
   <div id="info">
     <h2 style="margin:0 0 4px 0;">Aquatic Dolphin Chess</h2>
-    <p style="margin:0;">Turn: <span id="status">Light Pink Team</span></p>
+    <p style="margin:0 0 4px 0; color: #00e5ff; font-size: 0.9em;">Human (Pink) vs Computer (Red)</p>
+    <p style="margin:0;">Turn: <span id="status">Human (Your Turn)</span></p>
   </div>
 
   <script>
@@ -54,35 +55,34 @@
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.1;
+    renderer.toneMappingExposure = 1.2;
     document.body.appendChild(renderer.domElement);
 
     const controls = new THREE.OrbitControls(camera, renderer.domElement);
     controls.target.set(0, 0, 0);
     controls.enableDamping = true;
 
-    // === DRAMATIC ARTWORK LIGHTING ===
-    // 1. Ambient fill light
-    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+    // === HIGH-CONTRAST DRAMATIC LIGHTING ===
+    scene.add(new THREE.AmbientLight(0xffffff, 0.4));
 
-    // 2. Key Light (Main highlight and shadow caster)
-    const keyLight = new THREE.DirectionalLight(0xffffff, 1.4);
-    keyLight.position.set(6, 12, 8);
+    // Warm Key Light (Sculptural highlights)
+    const keyLight = new THREE.DirectionalLight(0xfff0e6, 1.8);
+    keyLight.position.set(6, 14, 8);
     keyLight.castShadow = true;
     keyLight.shadow.mapSize.width = 2048;
     keyLight.shadow.mapSize.height = 2048;
     keyLight.shadow.bias = -0.0001;
     scene.add(keyLight);
 
-    // 3. Blue/Teal Fill Light (Adds cool underwater shadow depth)
-    const fillLight = new THREE.DirectionalLight(0x00e5ff, 0.8);
-    fillLight.position.set(-8, 6, -6);
-    scene.add(fillLight);
-
-    // 4. Cyan Rim Light (Catches top edges and contours)
-    const rimLight = new THREE.PointLight(0x80deea, 1.5, 30);
-    rimLight.position.set(0, 8, -8);
+    // Cyan Back Rim Light (Contours and silhouette highlights)
+    const rimLight = new THREE.DirectionalLight(0x00e5ff, 1.5);
+    rimLight.position.set(-6, 8, -10);
     scene.add(rimLight);
+
+    // Deep Blue Fill Light
+    const fillLight = new THREE.DirectionalLight(0x0044ff, 0.8);
+    fillLight.position.set(8, 4, -4);
+    scene.add(fillLight);
 
     const boardGroup = new THREE.Group();
     const piecesGroup = new THREE.Group();
@@ -121,44 +121,20 @@
       }
     }
 
-    // === PROCEDURAL BUMP TEXTURE (Pops sculpted edges and contours) ===
-    function createNoiseCanvas() {
-      const canvas = document.createElement('canvas');
-      canvas.width = 256;
-      canvas.height = 256;
-      const ctx = canvas.getContext('2d');
-      const imgData = ctx.createImageData(256, 256);
-      for (let i = 0; i < imgData.data.length; i += 4) {
-        const val = Math.floor(Math.random() * 255);
-        imgData.data[i] = val;
-        imgData.data[i+1] = val;
-        imgData.data[i+2] = val;
-        imgData.data[i+3] = 255;
-      }
-      ctx.putImageData(imgData, 0, 0);
-      return canvas;
-    }
-    const bumpMapTexture = new THREE.CanvasTexture(createNoiseCanvas());
-    bumpMapTexture.wrapS = THREE.RepeatWrapping;
-    bumpMapTexture.wrapT = THREE.RepeatWrapping;
-    bumpMapTexture.repeat.set(8, 8);
-
-    // === HIGH-DETAIL ARTISTIC MATERIALS ===
+    // === HIGH GLOSS ARTWORK MATERIALS ===
+    // Light Pink: Human Player
     const whiteMaterial = new THREE.MeshStandardMaterial({ 
-      color: 0xffb6c1, 
-      roughness: 0.25, 
-      metalness: 0.2,
-      bumpMap: bumpMapTexture,
-      bumpScale: 0.003,
+      color: 0xffb3cb, 
+      roughness: 0.08, 
+      metalness: 0.1,
       side: THREE.DoubleSide
     });
     
+    // Deep Red: Computer Opponent
     const blackMaterial = new THREE.MeshStandardMaterial({ 
-      color: 0x800040, 
-      roughness: 0.2, 
-      metalness: 0.35,
-      bumpMap: bumpMapTexture,
-      bumpScale: 0.003,
+      color: 0xc80036, 
+      roughness: 0.12, 
+      metalness: 0.6,
       side: THREE.DoubleSide
     });
 
@@ -248,6 +224,23 @@
       }
     }
 
+    // === AUTOMATIC COMPUTER AI MOVE ===
+    function makeComputerMove() {
+      if (game.game_over() || game.turn() !== 'b') return;
+
+      const moves = game.moves();
+      if (moves.length === 0) return;
+
+      // Pick a legal move for the Red computer
+      const randomMove = moves[Math.floor(Math.random() * moves.length)];
+
+      setTimeout(() => {
+        game.move(randomMove);
+        renderPieces();
+        updateStatus();
+      }, 600); // 0.6 second delay
+    }
+
     // Interaction Controls
     let selectedSquare = null;
     const raycaster = new THREE.Raycaster();
@@ -271,6 +264,9 @@
     }
 
     window.addEventListener('click', (event) => {
+      // Prevent human player from making a move during Computer's turn
+      if (game.turn() === 'b') return;
+
       mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
       mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
@@ -292,6 +288,9 @@
             clearHighlights();
             renderPieces();
             updateStatus();
+            
+            // Trigger automatic Red response
+            makeComputerMove();
             return;
           }
         }
@@ -312,9 +311,13 @@
 
     function updateStatus() {
       const statusEl = document.getElementById('status');
-      let statusText = game.turn() === 'w' ? 'Light Pink Team' : 'Deep Pink Team';
+      let statusText = game.turn() === 'w' ? 'Human (Your Turn)' : 'Computer Thinking...';
+      
       if (game.in_check()) statusText += ' - CHECK!';
-      if (game.in_checkmate()) statusText = 'Game Over - Checkmate!';
+      if (game.in_checkmate()) {
+        statusText = game.turn() === 'w' ? 'Game Over - Computer Wins!' : 'Game Over - You Win!';
+      }
+      
       statusEl.textContent = statusText;
     }
 
