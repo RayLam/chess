@@ -52,18 +52,37 @@
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.1;
     document.body.appendChild(renderer.domElement);
 
     const controls = new THREE.OrbitControls(camera, renderer.domElement);
     controls.target.set(0, 0, 0);
     controls.enableDamping = true;
 
-    // Lighting
-    scene.add(new THREE.AmbientLight(0xffffff, 1.2));
-    const keyLight = new THREE.DirectionalLight(0xffffff, 1.0);
-    keyLight.position.set(5, 12, 8);
+    // === DRAMATIC ARTWORK LIGHTING ===
+    // 1. Ambient fill light
+    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+
+    // 2. Key Light (Main highlight and shadow caster)
+    const keyLight = new THREE.DirectionalLight(0xffffff, 1.4);
+    keyLight.position.set(6, 12, 8);
     keyLight.castShadow = true;
+    keyLight.shadow.mapSize.width = 2048;
+    keyLight.shadow.mapSize.height = 2048;
+    keyLight.shadow.bias = -0.0001;
     scene.add(keyLight);
+
+    // 3. Blue/Teal Fill Light (Adds cool underwater shadow depth)
+    const fillLight = new THREE.DirectionalLight(0x00e5ff, 0.8);
+    fillLight.position.set(-8, 6, -6);
+    scene.add(fillLight);
+
+    // 4. Cyan Rim Light (Catches top edges and contours)
+    const rimLight = new THREE.PointLight(0x80deea, 1.5, 30);
+    rimLight.position.set(0, 8, -8);
+    scene.add(rimLight);
 
     const boardGroup = new THREE.Group();
     const piecesGroup = new THREE.Group();
@@ -102,13 +121,52 @@
       }
     }
 
-    // Team Materials
-    const whiteMaterial = new THREE.MeshStandardMaterial({ color: 0xffa3c4, roughness: 0.2, metalness: 0.1 });
-    const blackMaterial = new THREE.MeshStandardMaterial({ color: 0x99004d, roughness: 0.2, metalness: 0.1 });
+    // === PROCEDURAL BUMP TEXTURE (Pops sculpted edges and contours) ===
+    function createNoiseCanvas() {
+      const canvas = document.createElement('canvas');
+      canvas.width = 256;
+      canvas.height = 256;
+      const ctx = canvas.getContext('2d');
+      const imgData = ctx.createImageData(256, 256);
+      for (let i = 0; i < imgData.data.length; i += 4) {
+        const val = Math.floor(Math.random() * 255);
+        imgData.data[i] = val;
+        imgData.data[i+1] = val;
+        imgData.data[i+2] = val;
+        imgData.data[i+3] = 255;
+      }
+      ctx.putImageData(imgData, 0, 0);
+      return canvas;
+    }
+    const bumpMapTexture = new THREE.CanvasTexture(createNoiseCanvas());
+    bumpMapTexture.wrapS = THREE.RepeatWrapping;
+    bumpMapTexture.wrapT = THREE.RepeatWrapping;
+    bumpMapTexture.repeat.set(8, 8);
+
+    // === HIGH-DETAIL ARTISTIC MATERIALS ===
+    const whiteMaterial = new THREE.MeshStandardMaterial({ 
+      color: 0xffb6c1, 
+      roughness: 0.25, 
+      metalness: 0.2,
+      bumpMap: bumpMapTexture,
+      bumpScale: 0.003,
+      side: THREE.DoubleSide
+    });
+    
+    const blackMaterial = new THREE.MeshStandardMaterial({ 
+      color: 0x800040, 
+      roughness: 0.2, 
+      metalness: 0.35,
+      bumpMap: bumpMapTexture,
+      bumpScale: 0.003,
+      side: THREE.DoubleSide
+    });
 
     const loader = new THREE.GLTFLoader();
     const pieceModels = {};
     const modelFiles = { p: 'pawn.glb', n: 'knight.glb', b: 'bishop.glb', r: 'rook.glb', q: 'queen.glb', k: 'king.glb' };
+
+    const TARGET_HEIGHT = 1.2;
 
     function normalizeAndCenterModel(model) {
       const wrapper = new THREE.Group();
@@ -122,16 +180,14 @@
       model.position.z -= center.z;
       model.position.y -= box.min.y;
 
-      const maxDim = Math.max(size.x, size.z);
-      if (maxDim > 0) {
-        const scale = 0.75 / maxDim;
+      if (size.y > 0) {
+        const scale = TARGET_HEIGHT / size.y;
         wrapper.scale.set(scale, scale, scale);
       }
 
       return wrapper;
     }
 
-    // Isolated loading logic with automatic pawn fallback
     function loadAllModels() {
       loader.load('./pawn.glb', (pawnGltf) => {
         const basePawnModel = normalizeAndCenterModel(pawnGltf.scene);
@@ -177,6 +233,7 @@
             pieceMesh.traverse((child) => {
               if (child.isMesh) {
                 child.material = targetMaterial;
+                child.material.side = THREE.DoubleSide;
                 child.castShadow = true;
                 child.receiveShadow = true;
               }
