@@ -49,38 +49,34 @@
     const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
     camera.position.set(0, 10, 12);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.BasicShadowMap; // Optimized for performance
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.2;
+    renderer.toneMappingExposure = 1.0;
     document.body.appendChild(renderer.domElement);
 
     const controls = new THREE.OrbitControls(camera, renderer.domElement);
     controls.target.set(0, 0, 0);
     controls.enableDamping = true;
 
-    // === HIGH-CONTRAST DRAMATIC LIGHTING ===
-    scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+    // Light Setup
+    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
 
-    // Warm Key Light (Sculptural highlights)
-    const keyLight = new THREE.DirectionalLight(0xfff0e6, 1.8);
+    const keyLight = new THREE.DirectionalLight(0xffffff, 1.4);
     keyLight.position.set(6, 14, 8);
     keyLight.castShadow = true;
-    keyLight.shadow.mapSize.width = 2048;
-    keyLight.shadow.mapSize.height = 2048;
-    keyLight.shadow.bias = -0.0001;
+    keyLight.shadow.mapSize.width = 1024; // Lower resolution shadow map for smooth cursor tracking
+    keyLight.shadow.mapSize.height = 1024;
     scene.add(keyLight);
 
-    // Cyan Back Rim Light (Contours and silhouette highlights)
-    const rimLight = new THREE.DirectionalLight(0x00e5ff, 1.5);
+    const rimLight = new THREE.DirectionalLight(0x00e5ff, 1.2);
     rimLight.position.set(-6, 8, -10);
     scene.add(rimLight);
 
-    // Deep Blue Fill Light
-    const fillLight = new THREE.DirectionalLight(0x0044ff, 0.8);
+    const fillLight = new THREE.DirectionalLight(0x0044ff, 0.6);
     fillLight.position.set(8, 4, -4);
     scene.add(fillLight);
 
@@ -121,20 +117,20 @@
       }
     }
 
-    // === HIGH GLOSS ARTWORK MATERIALS ===
-    // Light Pink: Human Player
+    // === RESTORED VIBRANT PINK & RED MATERIALS ===
+    // Vibrant Hot Pink Human Team
     const whiteMaterial = new THREE.MeshStandardMaterial({ 
-      color: 0xffb3cb, 
-      roughness: 0.08, 
+      color: 0xff69b4, 
+      roughness: 0.15, 
       metalness: 0.1,
       side: THREE.DoubleSide
     });
     
-    // Deep Red: Computer Opponent
+    // Deep Ruby Metallic Red Computer Opponent
     const blackMaterial = new THREE.MeshStandardMaterial({ 
-      color: 0xc80036, 
-      roughness: 0.12, 
-      metalness: 0.6,
+      color: 0xd00000, 
+      roughness: 0.15, 
+      metalness: 0.4,
       side: THREE.DoubleSide
     });
 
@@ -231,14 +227,13 @@
       const moves = game.moves();
       if (moves.length === 0) return;
 
-      // Pick a legal move for the Red computer
       const randomMove = moves[Math.floor(Math.random() * moves.length)];
 
       setTimeout(() => {
         game.move(randomMove);
         renderPieces();
         updateStatus();
-      }, 600); // 0.6 second delay
+      }, 500);
     }
 
     // Interaction Controls
@@ -264,7 +259,6 @@
     }
 
     window.addEventListener('click', (event) => {
-      // Prevent human player from making a move during Computer's turn
       if (game.turn() === 'b') return;
 
       mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
@@ -288,8 +282,6 @@
             clearHighlights();
             renderPieces();
             updateStatus();
-            
-            // Trigger automatic Red response
             makeComputerMove();
             return;
           }
