@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Aquatic Dolphin Chess - Studio Model Quality</title>
+  <title>Aquatic Dolphin Chess - RTS Outlines</title>
   <style>
     body {
       margin: 0;
@@ -39,12 +39,19 @@
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/environments/RoomEnvironment.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+
+  <!-- Post-Processing Engine for Game Dev Outlines -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/OutlinePass.js"></script>
 </head>
 <body>
 
   <div id="info">
     <h2 style="margin:0 0 4px 0;">Aquatic Dolphin Chess</h2>
-    <p style="margin:0 0 4px 0; color: #00e5ff; font-size: 0.9em;">Human (Pink Pedestal) vs Computer (Red Pedestal)</p>
+    <p style="margin:0 0 4px 0; color: #00e5ff; font-size: 0.9em;">Human (Pink Aura) vs Computer (Red Aura)</p>
     <p style="margin:0;">Turn: <span id="status">Human (Your Turn)</span></p>
   </div>
 
@@ -55,17 +62,18 @@
     const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
     camera.position.set(0, 10, 12);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.0;
+    renderer.toneMappingExposure = 1.1;
     renderer.outputEncoding = THREE.sRGBEncoding;
+    renderer.setClearColor(0x000000, 0); // Preserves CSS gradient background
     document.body.appendChild(renderer.domElement);
 
-    // Studio IBL Environment (Meshy/Model-Viewer Standard)
+    // Studio Environment Lighting
     const pmremGenerator = new THREE.PMREMGenerator(renderer);
     pmremGenerator.compileEquirectangularShader();
     const roomEnv = new THREE.RoomEnvironment();
@@ -76,7 +84,6 @@
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
 
-    // Direct Directional Studio Lighting
     const keyLight = new THREE.DirectionalLight(0xffffff, 1.4);
     keyLight.position.set(6, 14, 8);
     keyLight.castShadow = true;
@@ -94,14 +101,35 @@
     scene.add(highlightsGroup);
     scene.add(captureEffectsGroup);
 
-    // Lagoon Base
+    // === EFFECT COMPOSER (POST-PROCESSING) ===
+    const composer = new THREE.EffectComposer(renderer);
+    const renderPass = new THREE.RenderPass(scene, camera);
+    composer.addPass(renderPass);
+
+    // Team Pink Aura
+    const outlinePink = new THREE.OutlinePass(new THREE.Vector2(window.innerWidth, window.innerHeight), scene, camera);
+    outlinePink.edgeStrength = 4.0;
+    outlinePink.edgeGlow = 1.0;
+    outlinePink.edgeThickness = 2.0;
+    outlinePink.visibleEdgeColor.set('#ff1493'); 
+    outlinePink.hiddenEdgeColor.set('#ff1493');
+    composer.addPass(outlinePink);
+
+    // Team Red Aura
+    const outlineRed = new THREE.OutlinePass(new THREE.Vector2(window.innerWidth, window.innerHeight), scene, camera);
+    outlineRed.edgeStrength = 4.0;
+    outlineRed.edgeGlow = 1.0;
+    outlineRed.edgeThickness = 2.0;
+    outlineRed.visibleEdgeColor.set('#ff0000');
+    outlineRed.hiddenEdgeColor.set('#ff0000');
+    composer.addPass(outlineRed);
+
     const lagoonGeo = new THREE.BoxGeometry(9.6, 1.5, 9.6);
     const lagoonMat = new THREE.MeshPhongMaterial({ color: 0x004466, transparent: true, opacity: 0.85 });
     const lagoon = new THREE.Mesh(lagoonGeo, lagoonMat);
     lagoon.position.y = -0.8;
     scene.add(lagoon);
 
-    // Board Tiles
     const boardOffset = 3.5;
     const boardSquares = {};
     const clickableSquares = [];
@@ -135,6 +163,12 @@
     function normalizeAndCenterModel(model) {
       const wrapper = new THREE.Group();
       wrapper.add(model);
+      
+      model.traverse((child) => {
+        if (child.isMesh && child.geometry) {
+          child.geometry.computeVertexNormals();
+        }
+      });
 
       const box = new THREE.Box3().setFromObject(model);
       const center = box.getCenter(new THREE.Vector3());
@@ -148,7 +182,6 @@
         const scale = TARGET_HEIGHT / size.y;
         wrapper.scale.set(scale, scale, scale);
       }
-
       return wrapper;
     }
 
@@ -176,12 +209,10 @@
             }
           );
         });
-
         renderPieces();
       });
     }
 
-    // Capture FX State Tracker
     const activeAnimations = [];
 
     function triggerCaptureAnimation(capturedPieceType, capturedColor, position) {
@@ -214,44 +245,39 @@
         piecesGroup.remove(piecesGroup.children[0]);
       }
 
+      const pinkTeam = [];
+      const redTeam = [];
       const boardState = game.board();
+
       for (let row = 0; row < 8; row++) {
         for (let col = 0; col < 8; col++) {
           const piece = boardState[row][col];
           if (piece && pieceModels[piece.type]) {
-            const pieceContainer = new THREE.Group();
             const pieceMesh = pieceModels[piece.type].clone(true);
 
-            // 1. PRESERVE ORIGINAL EMBEDDED TEXTURES AND SHADING
+            // Models are left 100% UNTOUCHED to preserve raw Meshy textures
             pieceMesh.traverse((child) => {
               if (child.isMesh) {
                 child.castShadow = true;
                 child.receiveShadow = true;
+                
+                // Sort meshes into arrays for post-processing rendering
+                if (piece.color === 'w') pinkTeam.push(child);
+                else redTeam.push(child);
               }
             });
 
-            // 2. TEAM IDENTIFIER PEDESTAL RING (Avoids destroying original piece textures)
-            const ringGeo = new THREE.CylinderGeometry(0.42, 0.45, 0.08, 32);
-            const ringMat = new THREE.MeshStandardMaterial({
-              color: piece.color === 'w' ? 0xff69b4 : 0xd00000,
-              emissive: piece.color === 'w' ? 0xff1493 : 0x8b0000,
-              emissiveIntensity: 0.4,
-              roughness: 0.2,
-              metalness: 0.5
-            });
-            const ring = new THREE.Mesh(ringGeo, ringMat);
-            ring.position.y = 0.04;
-
-            pieceContainer.add(ring);
-            pieceContainer.add(pieceMesh);
-
             pieceMesh.rotation.y = piece.color === 'w' ? Math.PI / 2 : -Math.PI / 2;
-            pieceContainer.position.set(col - boardOffset, 0.08, row - boardOffset);
-            pieceContainer.userData = { squareName: String.fromCharCode(97 + col) + (8 - row) };
-            piecesGroup.add(pieceContainer);
+            pieceMesh.position.set(col - boardOffset, 0.08, row - boardOffset);
+            pieceMesh.userData = { squareName: String.fromCharCode(97 + col) + (8 - row) };
+            piecesGroup.add(pieceMesh);
           }
         }
       }
+
+      // Apply the neon auras
+      outlinePink.selectedObjects = pinkTeam;
+      outlineRed.selectedObjects = redTeam;
     }
 
     function executeMove(moveObj) {
@@ -270,7 +296,6 @@
       return false;
     }
 
-    // AI Engine
     const PIECE_VALUES = { p: 10, n: 30, b: 30, r: 50, q: 90, k: 900 };
 
     function evaluateMove(move) {
@@ -288,19 +313,13 @@
 
     function makeComputerMove() {
       if (game.game_over() || game.turn() !== 'b') return;
-
       const moves = game.moves({ verbose: true });
       if (moves.length === 0) return;
 
       moves.sort((a, b) => evaluateMove(b) - evaluateMove(a));
-      const bestMove = moves[0];
-
-      setTimeout(() => {
-        executeMove(bestMove);
-      }, 400);
+      setTimeout(() => { executeMove(moves[0]); }, 400);
     }
 
-    // Fast Canvas Click Listener
     let selectedSquare = null;
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
@@ -360,12 +379,8 @@
     function updateStatus() {
       const statusEl = document.getElementById('status');
       let statusText = game.turn() === 'w' ? 'Human (Your Turn)' : 'Computer Thinking...';
-      
       if (game.in_check()) statusText += ' - CHECK!';
-      if (game.in_checkmate()) {
-        statusText = game.turn() === 'w' ? 'Game Over - Computer Wins!' : 'Game Over - You Win!';
-      }
-      
+      if (game.in_checkmate()) statusText = game.turn() === 'w' ? 'Game Over - Computer Wins!' : 'Game Over - You Win!';
       statusEl.textContent = statusText;
     }
 
@@ -373,6 +388,7 @@
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
+      composer.setSize(window.innerWidth, window.innerHeight);
     });
 
     loadAllModels();
@@ -381,14 +397,11 @@
       requestAnimationFrame(animate);
 
       const now = Date.now();
-
-      // Floating board motion
       const time = now * 0.0025;
       piecesGroup.children.forEach((piece, idx) => {
         piece.position.y = 0.08 + Math.sin(time + idx * 0.4) * 0.015;
       });
 
-      // Captured Piece FX
       for (let i = activeAnimations.length - 1; i >= 0; i--) {
         const anim = activeAnimations[i];
         const elapsed = now - anim.startTime;
@@ -412,7 +425,7 @@
       }
 
       controls.update();
-      renderer.render(scene, camera);
+      composer.render(); // Powered by EffectComposer instead of standard renderer
     }
     animate();
   </script>
