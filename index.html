@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Aquatic Dolphin Chess - RTS Outlines</title>
+  <title>Aquatic Dolphin Chess - True HD Studio</title>
   <style>
     body {
       margin: 0;
@@ -39,19 +39,12 @@
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/environments/RoomEnvironment.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
-
-  <!-- Post-Processing Engine for Game Dev Outlines -->
-  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/EffectComposer.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/RenderPass.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/ShaderPass.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/shaders/CopyShader.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/postprocessing/OutlinePass.js"></script>
 </head>
 <body>
 
   <div id="info">
     <h2 style="margin:0 0 4px 0;">Aquatic Dolphin Chess</h2>
-    <p style="margin:0 0 4px 0; color: #00e5ff; font-size: 0.9em;">Human (Pink Aura) vs Computer (Red Aura)</p>
+    <p style="margin:0 0 4px 0; color: #00e5ff; font-size: 0.9em;">Human (Pink Base) vs Computer (Red Base)</p>
     <p style="margin:0;">Turn: <span id="status">Human (Your Turn)</span></p>
   </div>
 
@@ -62,33 +55,36 @@
     const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
     camera.position.set(0, 10, 12);
 
+    // 1. TRUE HD RENDERER (Restored sRGB Encoding and ACES Filmic mapping)
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.1;
-    renderer.outputEncoding = THREE.sRGBEncoding;
-    renderer.setClearColor(0x000000, 0); // Preserves CSS gradient background
+    renderer.toneMappingExposure = 1.0; 
+    renderer.outputEncoding = THREE.sRGBEncoding; // Crucial for rich, vibrant textures
     document.body.appendChild(renderer.domElement);
 
-    // Studio Environment Lighting
+    // 2. STUDIO IBL ENVIRONMENT (Matches Meshy Viewer Exactly)
     const pmremGenerator = new THREE.PMREMGenerator(renderer);
     pmremGenerator.compileEquirectangularShader();
     const roomEnv = new THREE.RoomEnvironment();
     scene.environment = pmremGenerator.fromScene(roomEnv).texture;
+    // We intentionally DO NOT add an AmbientLight. The RoomEnvironment provides realistic bounce lighting.
 
     const controls = new THREE.OrbitControls(camera, renderer.domElement);
     controls.target.set(0, 0, 0);
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
 
-    const keyLight = new THREE.DirectionalLight(0xffffff, 1.4);
+    // 3. SINGLE HIGH-CONTRAST KEY LIGHT (For dramatic, sharp shadows)
+    const keyLight = new THREE.DirectionalLight(0xffffff, 2.0);
     keyLight.position.set(6, 14, 8);
     keyLight.castShadow = true;
     keyLight.shadow.mapSize.width = 2048;
     keyLight.shadow.mapSize.height = 2048;
+    keyLight.shadow.bias = -0.0001;
     scene.add(keyLight);
 
     const boardGroup = new THREE.Group();
@@ -101,35 +97,14 @@
     scene.add(highlightsGroup);
     scene.add(captureEffectsGroup);
 
-    // === EFFECT COMPOSER (POST-PROCESSING) ===
-    const composer = new THREE.EffectComposer(renderer);
-    const renderPass = new THREE.RenderPass(scene, camera);
-    composer.addPass(renderPass);
-
-    // Team Pink Aura
-    const outlinePink = new THREE.OutlinePass(new THREE.Vector2(window.innerWidth, window.innerHeight), scene, camera);
-    outlinePink.edgeStrength = 4.0;
-    outlinePink.edgeGlow = 1.0;
-    outlinePink.edgeThickness = 2.0;
-    outlinePink.visibleEdgeColor.set('#ff1493'); 
-    outlinePink.hiddenEdgeColor.set('#ff1493');
-    composer.addPass(outlinePink);
-
-    // Team Red Aura
-    const outlineRed = new THREE.OutlinePass(new THREE.Vector2(window.innerWidth, window.innerHeight), scene, camera);
-    outlineRed.edgeStrength = 4.0;
-    outlineRed.edgeGlow = 1.0;
-    outlineRed.edgeThickness = 2.0;
-    outlineRed.visibleEdgeColor.set('#ff0000');
-    outlineRed.hiddenEdgeColor.set('#ff0000');
-    composer.addPass(outlineRed);
-
+    // Lagoon Base
     const lagoonGeo = new THREE.BoxGeometry(9.6, 1.5, 9.6);
     const lagoonMat = new THREE.MeshPhongMaterial({ color: 0x004466, transparent: true, opacity: 0.85 });
     const lagoon = new THREE.Mesh(lagoonGeo, lagoonMat);
     lagoon.position.y = -0.8;
     scene.add(lagoon);
 
+    // Board Tiles
     const boardOffset = 3.5;
     const boardSquares = {};
     const clickableSquares = [];
@@ -138,8 +113,10 @@
       for (let col = 0; col < 8; col++) {
         const isLight = (row + col) % 2 === 0;
         const squareGeo = new THREE.BoxGeometry(1, 0.15, 1);
-        const squareMat = new THREE.MeshPhongMaterial({
+        const squareMat = new THREE.MeshStandardMaterial({
           color: isLight ? 0xb2ebf2 : 0x004d40,
+          roughness: 0.2,
+          metalness: 0.1,
           transparent: true,
           opacity: 0.85
         });
@@ -148,6 +125,7 @@
 
         square.position.set(col - boardOffset, 0, row - boardOffset);
         square.userData = { squareName };
+        square.receiveShadow = true;
         boardGroup.add(square);
         boardSquares[squareName] = square;
         clickableSquares.push(square);
@@ -157,7 +135,6 @@
     const loader = new THREE.GLTFLoader();
     const pieceModels = {};
     const modelFiles = { p: 'pawn.glb', n: 'knight.glb', b: 'bishop.glb', r: 'rook.glb', q: 'queen.glb', k: 'king.glb' };
-
     const TARGET_HEIGHT = 1.2;
 
     function normalizeAndCenterModel(model) {
@@ -245,39 +222,52 @@
         piecesGroup.remove(piecesGroup.children[0]);
       }
 
-      const pinkTeam = [];
-      const redTeam = [];
       const boardState = game.board();
 
       for (let row = 0; row < 8; row++) {
         for (let col = 0; col < 8; col++) {
           const piece = boardState[row][col];
           if (piece && pieceModels[piece.type]) {
+            const pieceContainer = new THREE.Group();
             const pieceMesh = pieceModels[piece.type].clone(true);
 
-            // Models are left 100% UNTOUCHED to preserve raw Meshy textures
+            // 4. MATTE CLAY FINISH (Matches Meshy Material Setup)
             pieceMesh.traverse((child) => {
               if (child.isMesh) {
+                child.material = child.material.clone();
+                // Force a uniform matte/clay finish across all models
+                child.material.roughness = 0.65; 
+                child.material.metalness = 0.05;
+                // We DO NOT override the color. We let the native AI textures stay intact.
+                
                 child.castShadow = true;
                 child.receiveShadow = true;
-                
-                // Sort meshes into arrays for post-processing rendering
-                if (piece.color === 'w') pinkTeam.push(child);
-                else redTeam.push(child);
               }
             });
 
+            // 5. GLOWING TEAM PEDESTALS (To identify teams without ruining textures)
+            const ringGeo = new THREE.CylinderGeometry(0.45, 0.45, 0.12, 32);
+            const ringMat = new THREE.MeshStandardMaterial({
+              color: piece.color === 'w' ? 0xff1493 : 0xb20000,
+              emissive: piece.color === 'w' ? 0xff1493 : 0xcc0000,
+              emissiveIntensity: 0.6, // Makes the base glow brightly
+              roughness: 0.2,
+              metalness: 0.8
+            });
+            const ring = new THREE.Mesh(ringGeo, ringMat);
+            ring.position.y = 0.06;
+            ring.castShadow = true;
+
+            pieceContainer.add(ring);
+            pieceContainer.add(pieceMesh);
+
             pieceMesh.rotation.y = piece.color === 'w' ? Math.PI / 2 : -Math.PI / 2;
-            pieceMesh.position.set(col - boardOffset, 0.08, row - boardOffset);
-            pieceMesh.userData = { squareName: String.fromCharCode(97 + col) + (8 - row) };
-            piecesGroup.add(pieceMesh);
+            pieceContainer.position.set(col - boardOffset, 0.08, row - boardOffset);
+            pieceContainer.userData = { squareName: String.fromCharCode(97 + col) + (8 - row) };
+            piecesGroup.add(pieceContainer);
           }
         }
       }
-
-      // Apply the neon auras
-      outlinePink.selectedObjects = pinkTeam;
-      outlineRed.selectedObjects = redTeam;
     }
 
     function executeMove(moveObj) {
@@ -320,6 +310,7 @@
       setTimeout(() => { executeMove(moves[0]); }, 400);
     }
 
+    // Direct Tile Raycasting
     let selectedSquare = null;
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
@@ -388,7 +379,6 @@
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
-      composer.setSize(window.innerWidth, window.innerHeight);
     });
 
     loadAllModels();
@@ -425,7 +415,7 @@
       }
 
       controls.update();
-      composer.render(); // Powered by EffectComposer instead of standard renderer
+      renderer.render(scene, camera);
     }
     animate();
   </script>
