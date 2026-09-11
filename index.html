@@ -62,7 +62,7 @@
     controls.target.set(0, 0, 0);
     controls.enableDamping = true;
 
-    // Light Setup
+    // Lights
     scene.add(new THREE.AmbientLight(0xffffff, 0.6));
 
     const keyLight = new THREE.DirectionalLight(0xffffff, 1.4);
@@ -99,12 +99,12 @@
     lagoon.position.y = -0.8;
     scene.add(lagoon);
 
-    // Glass Board & Hitboxes
+    // Board & Thin Flat Hitboxes (Prevents Blocking Clicks)
     const boardOffset = 3.5;
     const boardSquares = {};
     const hitboxMeshes = [];
 
-    const hitboxGeo = new THREE.BoxGeometry(1, 2, 1);
+    const hitboxGeo = new THREE.BoxGeometry(0.95, 0.2, 0.95);
     const hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
 
     for (let row = 0; row < 8; row++) {
@@ -125,7 +125,7 @@
         boardSquares[squareName] = square;
 
         const hitbox = new THREE.Mesh(hitboxGeo, hitboxMat);
-        hitbox.position.set(col - boardOffset, 1, row - boardOffset);
+        hitbox.position.set(col - boardOffset, 0.1, row - boardOffset);
         hitbox.userData = { squareName };
         hitboxesGroup.add(hitbox);
         hitboxMeshes.push(hitbox);
@@ -202,31 +202,30 @@
       });
     }
 
-    // Capture FX State Tracker
+    // Capture Effect State Tracker
     const activeAnimations = [];
 
     function triggerCaptureAnimation(capturedPieceType, capturedColor, position) {
       if (!pieceModels[capturedPieceType]) return;
 
       const animMesh = pieceModels[capturedPieceType].clone(true);
-      const mat = (capturedColor === 'w' ? whiteMaterial : blackMaterial).clone();
-      mat.transparent = true;
-      mat.opacity = 1.0;
 
       animMesh.traverse((child) => {
         if (child.isMesh) {
-          child.material = mat;
+          child.material = child.material.clone();
+          child.material.transparent = true;
+          child.material.opacity = 1.0;
         }
       });
 
-      animMesh.position.copy(position);
+      animMesh.position.set(position.x, 0.2, position.z);
       captureEffectsGroup.add(animMesh);
 
       activeAnimations.push({
         mesh: animMesh,
         startScale: animMesh.scale.x,
         startTime: Date.now(),
-        duration: 900
+        duration: 1000
       });
     }
 
@@ -262,11 +261,14 @@
     }
 
     function executeMove(moveObj) {
+      // 1. Check if piece exists BEFORE executing move
       const targetPiece = game.get(moveObj.to);
       const targetSquare = boardSquares[moveObj.to];
 
+      // 2. Perform chess rule move
       const executedMove = game.move(moveObj);
       if (executedMove) {
+        // 3. Trigger capture animation if a piece was taken
         if (targetPiece && targetSquare) {
           triggerCaptureAnimation(targetPiece.type, targetPiece.color, targetSquare.position);
         }
@@ -394,13 +396,13 @@
 
       const now = Date.now();
 
-      // Idle board floating animation
+      // Idle board animation
       const time = now * 0.0025;
       piecesGroup.children.forEach((piece, idx) => {
         piece.position.y = 0.05 + Math.sin(time + idx * 0.4) * 0.015;
       });
 
-      // Capture FX loop: Expand 2.5x, Rotate 360°, Fade out
+      // Captured Piece Animation: Expand 2.5x, Spin 360°, Fade
       for (let i = activeAnimations.length - 1; i >= 0; i--) {
         const anim = activeAnimations[i];
         const elapsed = now - anim.startTime;
@@ -410,7 +412,7 @@
           captureEffectsGroup.remove(anim.mesh);
           activeAnimations.splice(i, 1);
         } else {
-          // 1. Expand view (scale up to 2.5x)
+          // 1. Expand view scale up to 2.5x
           const scaleMult = 1.0 + progress * 1.5;
           anim.mesh.scale.set(
             anim.startScale * scaleMult,
@@ -418,11 +420,11 @@
             anim.startScale * scaleMult
           );
 
-          // 2. Rise off board & 360 spin
-          anim.mesh.position.y += 0.02;
+          // 2. Rise off board & Spin 360 degrees
+          anim.mesh.position.y += 0.025;
           anim.mesh.rotation.y += 0.15;
 
-          // 3. Fade out opacity
+          // 3. Fade out
           anim.mesh.traverse((child) => {
             if (child.isMesh && child.material) {
               child.material.opacity = 1.0 - progress;
