@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Aquatic Dolphin Chess</title>
+  <title>Aquatic Dolphin Chess - HD Studio Quality</title>
   <style>
     body {
       margin: 0;
@@ -37,6 +37,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/environments/RoomEnvironment.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
 </head>
 <body>
@@ -58,20 +59,28 @@
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.BasicShadowMap;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
     document.body.appendChild(renderer.domElement);
+
+    // === GENERATE MODEL-VIEWER STUDIO LIGHTING (PMREM / Room Environment) ===
+    const pmremGenerator = new THREE.PMREMGenerator(renderer);
+    pmremGenerator.compileEquirectangularShader();
+    const roomEnv = new THREE.RoomEnvironment();
+    scene.environment = pmremGenerator.fromScene(roomEnv).texture;
 
     const controls = new THREE.OrbitControls(camera, renderer.domElement);
     controls.target.set(0, 0, 0);
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
 
-    // Lighting
-    scene.add(new THREE.AmbientLight(0xffffff, 0.8));
-
+    // Directional Key Lighting for Soft Shadows
     const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
     keyLight.position.set(6, 14, 8);
     keyLight.castShadow = true;
+    keyLight.shadow.mapSize.width = 2048;
+    keyLight.shadow.mapSize.height = 2048;
     scene.add(keyLight);
 
     const boardGroup = new THREE.Group();
@@ -115,10 +124,6 @@
         clickableSquares.push(square);
       }
     }
-
-    // Materials
-    const whiteMaterial = new THREE.MeshStandardMaterial({ color: 0xff69b4, roughness: 0.2, metalness: 0.1, side: THREE.DoubleSide });
-    const blackMaterial = new THREE.MeshStandardMaterial({ color: 0xd00000, roughness: 0.2, metalness: 0.4, side: THREE.DoubleSide });
 
     const loader = new THREE.GLTFLoader();
     const pieceModels = {};
@@ -181,26 +186,20 @@
       });
     }
 
-    // Flicker-Free Capture FX
+    // Flicker-Free Capture Animations
     const activeAnimations = [];
 
     function triggerCaptureAnimation(capturedPieceType, capturedColor, position) {
       if (!pieceModels[capturedPieceType]) return;
 
       const animMesh = pieceModels[capturedPieceType].clone(true);
-      
-      // Override material settings on cloned mesh to eliminate Z-fighting
       animMesh.traverse((child) => {
         if (child.isMesh) {
-          const mat = child.material.clone();
-          mat.transparent = true;
-          mat.opacity = 1.0;
-          mat.depthWrite = false; // Fixes z-fighting flickering when scaling up
-          mat.polygonOffset = true;
-          mat.polygonOffsetFactor = -1;
-          child.material = mat;
-          child.castShadow = false; // Disables shadow re-calculation glitches
-          child.receiveShadow = false;
+          child.material = child.material.clone();
+          child.material.transparent = true;
+          child.material.opacity = 1.0;
+          child.material.depthWrite = false;
+          child.castShadow = false;
         }
       });
 
@@ -226,11 +225,22 @@
           const piece = boardState[row][col];
           if (piece && pieceModels[piece.type]) {
             const pieceMesh = pieceModels[piece.type].clone(true);
-            const targetMaterial = piece.color === 'w' ? whiteMaterial : blackMaterial;
 
+            // PRESERVE EMBEDDED TEXTURES + STUDIO ENVIRONMENT MAP
             pieceMesh.traverse((child) => {
               if (child.isMesh) {
-                child.material = targetMaterial;
+                child.material = child.material.clone();
+                
+                // Keep surface roughness & metalness details intact
+                child.material.roughness = 0.35;
+                child.material.metalness = 0.1;
+
+                if (piece.color === 'w') {
+                  child.material.color.setHex(0xff69b4); // Hot Pink
+                } else {
+                  child.material.color.setHex(0xd00000); // Ruby Red
+                }
+
                 child.material.side = THREE.DoubleSide;
                 child.castShadow = true;
                 child.receiveShadow = true;
@@ -374,13 +384,13 @@
 
       const now = Date.now();
 
-      // Idle board motion
+      // Floating board motion
       const time = now * 0.0025;
       piecesGroup.children.forEach((piece, idx) => {
         piece.position.y = 0.08 + Math.sin(time + idx * 0.4) * 0.015;
       });
 
-      // Captured Piece FX: Expand 2.5x, Rotate 360°, Fade out (Flicker-Free)
+      // Captured Piece FX
       for (let i = activeAnimations.length - 1; i >= 0; i--) {
         const anim = activeAnimations[i];
         const elapsed = now - anim.startTime;
