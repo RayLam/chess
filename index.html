@@ -181,20 +181,26 @@
       });
     }
 
-    // Capture FX
+    // Flicker-Free Capture FX
     const activeAnimations = [];
 
     function triggerCaptureAnimation(capturedPieceType, capturedColor, position) {
       if (!pieceModels[capturedPieceType]) return;
 
       const animMesh = pieceModels[capturedPieceType].clone(true);
+      
+      // Override material settings on cloned mesh to eliminate Z-fighting
       animMesh.traverse((child) => {
         if (child.isMesh) {
           const mat = child.material.clone();
           mat.transparent = true;
           mat.opacity = 1.0;
-          mat.depthWrite = false;
+          mat.depthWrite = false; // Fixes z-fighting flickering when scaling up
+          mat.polygonOffset = true;
+          mat.polygonOffsetFactor = -1;
           child.material = mat;
+          child.castShadow = false; // Disables shadow re-calculation glitches
+          child.receiveShadow = false;
         }
       });
 
@@ -286,7 +292,7 @@
       }, 400);
     }
 
-    // Direct Canvas Click Logic
+    // Interaction Controls
     let selectedSquare = null;
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
@@ -298,8 +304,6 @@
       mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
       raycaster.setFromCamera(mouse, camera);
-      
-      // Raycast against the actual board tile meshes directly
       const intersects = raycaster.intersectObjects(clickableSquares, false);
 
       if (intersects.length > 0) {
@@ -319,10 +323,9 @@
         if (piece && piece.color === game.turn()) {
           selectedSquare = squareName;
           clearHighlights();
-          highlightSquare(squareName, 0xffff00); // Highlight selected tile (Yellow)
-          
+          highlightSquare(squareName, 0xffff00);
           const moves = game.moves({ square: squareName, verbose: true });
-          moves.forEach((m) => highlightSquare(m.to, 0x00ff00)); // Highlight valid target tiles (Green)
+          moves.forEach((m) => highlightSquare(m.to, 0x00ff00));
         } else {
           selectedSquare = null;
           clearHighlights();
@@ -371,13 +374,13 @@
 
       const now = Date.now();
 
-      // Floating board motion
+      // Idle board motion
       const time = now * 0.0025;
       piecesGroup.children.forEach((piece, idx) => {
         piece.position.y = 0.08 + Math.sin(time + idx * 0.4) * 0.015;
       });
 
-      // Captured Piece FX
+      // Captured Piece FX: Expand 2.5x, Rotate 360°, Fade out (Flicker-Free)
       for (let i = activeAnimations.length - 1; i >= 0; i--) {
         const anim = activeAnimations[i];
         const elapsed = now - anim.startTime;
