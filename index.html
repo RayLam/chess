@@ -202,29 +202,29 @@
       });
     }
 
-    // Capture Animation State Tracker
+    // Capture FX State Tracker
     const activeAnimations = [];
 
-    function triggerCaptureAnimation(capturedMesh) {
-      // Clone mesh for animated effect
-      const clone = capturedMesh.clone(true);
-      
-      // Make materials transparent for smooth fade-out
-      clone.traverse((child) => {
-        if (child.isMesh) {
-          child.material = child.material.clone();
-          child.material.transparent = true;
-          child.material.opacity = 1.0;
-        }
+    function spawnCaptureFX(x, z, pieceColor) {
+      // 1. Create temporary animated mesh
+      const tempGeo = new THREE.CylinderGeometry(0.4, 0.4, 1.2, 16);
+      const tempMat = new THREE.MeshStandardMaterial({
+        color: pieceColor === 'w' ? 0xff69b4 : 0xd00000,
+        emissive: pieceColor === 'w' ? 0xff007f : 0xff0000,
+        emissiveIntensity: 0.8,
+        transparent: true,
+        opacity: 1.0,
+        roughness: 0.1
       });
-
-      captureEffectsGroup.add(clone);
+      const fxMesh = new THREE.Mesh(tempGeo, tempMat);
+      fxMesh.position.set(x, 0.6, z);
+      captureEffectsGroup.add(fxMesh);
 
       activeAnimations.push({
-        mesh: clone,
-        startScale: clone.scale.x,
+        mesh: fxMesh,
+        startScale: 1.0,
         startTime: Date.now(),
-        duration: 800 // 0.8 seconds total duration
+        duration: 1000 // 1 second effect duration
       });
     }
 
@@ -259,17 +259,15 @@
       }
     }
 
-    // Execute move & trigger animation on capture
+    // Execute Move
     function executeMove(moveObj) {
-      const targetSquare = moveObj.to;
+      const targetPiece = game.get(moveObj.to);
+      const targetSquareMesh = boardSquares[moveObj.to];
 
-      // Check if a piece exists on target square to capture
-      const targetPieceMesh = piecesGroup.children.find(child => child.userData.squareName === targetSquare);
-      
       const executedMove = game.move(moveObj);
       if (executedMove) {
-        if (targetPieceMesh) {
-          triggerCaptureAnimation(targetPieceMesh);
+        if (targetPiece && targetSquareMesh) {
+          spawnCaptureFX(targetSquareMesh.position.x, targetSquareMesh.position.z, targetPiece.color);
         }
         renderPieces();
         updateStatus();
@@ -278,7 +276,7 @@
       return false;
     }
 
-    // Smart Computer AI Engine
+    // Smart AI Engine
     const PIECE_VALUES = { p: 10, n: 30, b: 30, r: 50, q: 90, k: 900 };
 
     function evaluateMove(move) {
@@ -395,13 +393,13 @@
 
       const now = Date.now();
 
-      // Floating board idle animation
+      // Idle floating animation
       const time = now * 0.0025;
       piecesGroup.children.forEach((piece, idx) => {
         piece.position.y = 0.05 + Math.sin(time + idx * 0.4) * 0.015;
       });
 
-      // Update captured piece expand + 360-degree spin + fade animation
+      // Render 360-degree expand and spin FX on captured pieces
       for (let i = activeAnimations.length - 1; i >= 0; i--) {
         const anim = activeAnimations[i];
         const elapsed = now - anim.startTime;
@@ -411,21 +409,16 @@
           captureEffectsGroup.remove(anim.mesh);
           activeAnimations.splice(i, 1);
         } else {
-          // 1. Expand view (Scale up to 2.5x size)
-          const scaleMultiplier = 1 + progress * 1.5;
-          const currentScale = anim.startScale * scaleMultiplier;
+          // 1. Expand view (Scale up 2.5x)
+          const currentScale = anim.startScale * (1 + progress * 1.5);
           anim.mesh.scale.set(currentScale, currentScale, currentScale);
 
-          // 2. Lift upward slightly & rotate full 360 degrees
-          anim.mesh.position.y += 0.02;
-          anim.mesh.rotation.y += (Math.PI * 2) / (anim.duration / 16);
+          // 2. Rise upward & spin 360 degrees
+          anim.mesh.position.y += 0.025;
+          anim.mesh.rotation.y += 0.15;
 
-          // 3. Fade opacity out to 0
-          anim.mesh.traverse((child) => {
-            if (child.isMesh && child.material) {
-              child.material.opacity = 1.0 - progress;
-            }
-          });
+          // 3. Fade out
+          anim.mesh.material.opacity = 1.0 - progress;
         }
       }
 
