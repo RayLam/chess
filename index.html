@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Aquatic Dolphin Chess - Flicker Free</title>
+  <title>Aquatic Dolphin Chess - Fast Selection</title>
   <style>
     body {
       margin: 0;
@@ -100,12 +100,13 @@
     lagoon.position.y = -0.8;
     scene.add(lagoon);
 
-    // Board & Flat Hitboxes
+    // Elevated Hitboxes for Zero-Lag Selection
     const boardOffset = 3.5;
     const boardSquares = {};
     const hitboxMeshes = [];
 
-    const hitboxGeo = new THREE.BoxGeometry(0.95, 0.2, 0.95);
+    // Elevated geometry envelope covering the entire piece height
+    const hitboxGeo = new THREE.BoxGeometry(0.98, 1.5, 0.98);
     const hitboxMat = new THREE.MeshBasicMaterial({ visible: false });
 
     for (let row = 0; row < 8; row++) {
@@ -125,15 +126,16 @@
         boardGroup.add(square);
         boardSquares[squareName] = square;
 
+        // Position hitbox clearly above the board to prevent depth collisions
         const hitbox = new THREE.Mesh(hitboxGeo, hitboxMat);
-        hitbox.position.set(col - boardOffset, 0.1, row - boardOffset);
+        hitbox.position.set(col - boardOffset, 0.75, row - boardOffset);
         hitbox.userData = { squareName };
         hitboxesGroup.add(hitbox);
         hitboxMeshes.push(hitbox);
       }
     }
 
-    // High-Detail Smooth Materials
+    // High-Detail Materials
     const whiteMaterial = new THREE.MeshStandardMaterial({ 
       color: 0xff69b4, 
       roughness: 0.2, 
@@ -219,17 +221,16 @@
 
       const animMesh = pieceModels[capturedPieceType].clone(true);
 
-      // Apply anti-flicker transparent material settings
       animMesh.traverse((child) => {
         if (child.isMesh) {
           const mat = child.material.clone();
           mat.transparent = true;
           mat.opacity = 1.0;
-          mat.depthWrite = false; // Prevents Z-fighting pixel flickering
+          mat.depthWrite = false;
           mat.polygonOffset = true;
           mat.polygonOffsetFactor = -1;
           child.material = mat;
-          child.castShadow = false; // Prevents shadow map jitter during scaling
+          child.castShadow = false;
           child.receiveShadow = false;
         }
       });
@@ -326,9 +327,10 @@
       }, 500);
     }
 
-    // Interaction Controls
+    // Fast & Instant Raycasting Controls
     let selectedSquare = null;
     const raycaster = new THREE.Raycaster();
+    raycaster.firstHitOnly = true; // Optimization: Stop checking as soon as first hitbox is struck
     const mouse = new THREE.Vector2();
 
     function clearHighlights() {
@@ -415,7 +417,7 @@
         piece.position.y = 0.05 + Math.sin(time + idx * 0.4) * 0.015;
       });
 
-      // Captured Piece FX: Scale 2.5x, Rotate 360°, Fade (Flicker-Free)
+      // Captured Piece FX
       for (let i = activeAnimations.length - 1; i >= 0; i--) {
         const anim = activeAnimations[i];
         const elapsed = now - anim.startTime;
