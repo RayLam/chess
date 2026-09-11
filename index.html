@@ -30,6 +30,7 @@
     }
     canvas {
       display: block;
+      cursor: pointer;
     }
   </style>
 
@@ -76,13 +77,11 @@
     const boardGroup = new THREE.Group();
     const piecesGroup = new THREE.Group();
     const highlightsGroup = new THREE.Group();
-    const hitboxesGroup = new THREE.Group();
     const captureEffectsGroup = new THREE.Group();
 
     scene.add(boardGroup);
     scene.add(piecesGroup);
     scene.add(highlightsGroup);
-    scene.add(hitboxesGroup);
     scene.add(captureEffectsGroup);
 
     // Lagoon Base
@@ -92,22 +91,19 @@
     lagoon.position.y = -0.8;
     scene.add(lagoon);
 
-    // Grid Hitboxes
+    // Grid Construction
     const boardOffset = 3.5;
     const boardSquares = {};
-    const hitboxMeshes = [];
-
-    const hitboxGeo = new THREE.PlaneGeometry(0.95, 0.95);
-    const hitboxMat = new THREE.MeshBasicMaterial({ visible: false, side: THREE.DoubleSide });
+    const clickableSquares = [];
 
     for (let row = 0; row < 8; row++) {
       for (let col = 0; col < 8; col++) {
         const isLight = (row + col) % 2 === 0;
-        const squareGeo = new THREE.BoxGeometry(1, 0.1, 1);
+        const squareGeo = new THREE.BoxGeometry(1, 0.15, 1);
         const squareMat = new THREE.MeshPhongMaterial({
           color: isLight ? 0xb2ebf2 : 0x004d40,
           transparent: true,
-          opacity: 0.75
+          opacity: 0.85
         });
         const square = new THREE.Mesh(squareGeo, squareMat);
         const squareName = String.fromCharCode(97 + col) + (8 - row);
@@ -116,14 +112,7 @@
         square.userData = { squareName };
         boardGroup.add(square);
         boardSquares[squareName] = square;
-
-        // Static flat interaction plane on board surface
-        const hitbox = new THREE.Mesh(hitboxGeo, hitboxMat);
-        hitbox.rotation.x = -Math.PI / 2;
-        hitbox.position.set(col - boardOffset, 0.06, row - boardOffset);
-        hitbox.userData = { squareName };
-        hitboxesGroup.add(hitbox);
-        hitboxMeshes.push(hitbox);
+        clickableSquares.push(square);
       }
     }
 
@@ -192,7 +181,7 @@
       });
     }
 
-    // Capture Animations
+    // Capture FX
     const activeAnimations = [];
 
     function triggerCaptureAnimation(capturedPieceType, capturedColor, position) {
@@ -243,7 +232,7 @@
             });
 
             pieceMesh.rotation.y = piece.color === 'w' ? Math.PI / 2 : -Math.PI / 2;
-            pieceMesh.position.set(col - boardOffset, 0.05, row - boardOffset);
+            pieceMesh.position.set(col - boardOffset, 0.08, row - boardOffset);
             pieceMesh.userData = { squareName: String.fromCharCode(97 + col) + (8 - row) };
             piecesGroup.add(pieceMesh);
           }
@@ -297,34 +286,21 @@
       }, 400);
     }
 
-    // Input Handling
+    // Direct Canvas Click Logic
     let selectedSquare = null;
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
 
-    let isDragging = false;
-    let downX = 0, downY = 0;
-
-    window.addEventListener('pointerdown', (e) => {
-      downX = e.clientX;
-      downY = e.clientY;
-      isDragging = false;
-    });
-
-    window.addEventListener('pointermove', (e) => {
-      if (Math.abs(e.clientX - downX) > 3 || Math.abs(e.clientY - downY) > 3) {
-        isDragging = true;
-      }
-    });
-
-    window.addEventListener('pointerup', (event) => {
-      if (isDragging || game.turn() === 'b') return;
+    renderer.domElement.addEventListener('click', (event) => {
+      if (game.turn() === 'b') return;
 
       mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
       mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
       raycaster.setFromCamera(mouse, camera);
-      const intersects = raycaster.intersectObjects(hitboxMeshes, false);
+      
+      // Raycast against the actual board tile meshes directly
+      const intersects = raycaster.intersectObjects(clickableSquares, false);
 
       if (intersects.length > 0) {
         const squareName = intersects[0].object.userData.squareName;
@@ -343,9 +319,10 @@
         if (piece && piece.color === game.turn()) {
           selectedSquare = squareName;
           clearHighlights();
-          highlightSquare(squareName, 0xffff00);
+          highlightSquare(squareName, 0xffff00); // Highlight selected tile (Yellow)
+          
           const moves = game.moves({ square: squareName, verbose: true });
-          moves.forEach((m) => highlightSquare(m.to, 0x00ff00));
+          moves.forEach((m) => highlightSquare(m.to, 0x00ff00)); // Highlight valid target tiles (Green)
         } else {
           selectedSquare = null;
           clearHighlights();
@@ -362,11 +339,10 @@
     function highlightSquare(squareName, colorHex) {
       const target = boardSquares[squareName];
       if (!target) return;
-      const highlightGeo = new THREE.PlaneGeometry(0.9, 0.9);
-      const highlightMat = new THREE.MeshBasicMaterial({ color: colorHex, side: THREE.DoubleSide, transparent: true, opacity: 0.6 });
+      const highlightGeo = new THREE.BoxGeometry(1.02, 0.18, 1.02);
+      const highlightMat = new THREE.MeshBasicMaterial({ color: colorHex, transparent: true, opacity: 0.7 });
       const mesh = new THREE.Mesh(highlightGeo, highlightMat);
-      mesh.rotation.x = -Math.PI / 2;
-      mesh.position.set(target.position.x, 0.06, target.position.z);
+      mesh.position.set(target.position.x, 0.01, target.position.z);
       highlightsGroup.add(mesh);
     }
 
@@ -398,7 +374,7 @@
       // Floating board motion
       const time = now * 0.0025;
       piecesGroup.children.forEach((piece, idx) => {
-        piece.position.y = 0.05 + Math.sin(time + idx * 0.4) * 0.015;
+        piece.position.y = 0.08 + Math.sin(time + idx * 0.4) * 0.015;
       });
 
       // Captured Piece FX
