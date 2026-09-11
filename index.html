@@ -205,26 +205,28 @@
     // Capture FX State Tracker
     const activeAnimations = [];
 
-    function spawnCaptureFX(x, z, pieceColor) {
-      // 1. Create temporary animated mesh
-      const tempGeo = new THREE.CylinderGeometry(0.4, 0.4, 1.2, 16);
-      const tempMat = new THREE.MeshStandardMaterial({
-        color: pieceColor === 'w' ? 0xff69b4 : 0xd00000,
-        emissive: pieceColor === 'w' ? 0xff007f : 0xff0000,
-        emissiveIntensity: 0.8,
-        transparent: true,
-        opacity: 1.0,
-        roughness: 0.1
+    function triggerCaptureAnimation(capturedPieceType, capturedColor, position) {
+      if (!pieceModels[capturedPieceType]) return;
+
+      const animMesh = pieceModels[capturedPieceType].clone(true);
+      const mat = (capturedColor === 'w' ? whiteMaterial : blackMaterial).clone();
+      mat.transparent = true;
+      mat.opacity = 1.0;
+
+      animMesh.traverse((child) => {
+        if (child.isMesh) {
+          child.material = mat;
+        }
       });
-      const fxMesh = new THREE.Mesh(tempGeo, tempMat);
-      fxMesh.position.set(x, 0.6, z);
-      captureEffectsGroup.add(fxMesh);
+
+      animMesh.position.copy(position);
+      captureEffectsGroup.add(animMesh);
 
       activeAnimations.push({
-        mesh: fxMesh,
-        startScale: 1.0,
+        mesh: animMesh,
+        startScale: animMesh.scale.x,
         startTime: Date.now(),
-        duration: 1000 // 1 second effect duration
+        duration: 900
       });
     }
 
@@ -259,15 +261,14 @@
       }
     }
 
-    // Execute Move
     function executeMove(moveObj) {
       const targetPiece = game.get(moveObj.to);
-      const targetSquareMesh = boardSquares[moveObj.to];
+      const targetSquare = boardSquares[moveObj.to];
 
       const executedMove = game.move(moveObj);
       if (executedMove) {
-        if (targetPiece && targetSquareMesh) {
-          spawnCaptureFX(targetSquareMesh.position.x, targetSquareMesh.position.z, targetPiece.color);
+        if (targetPiece && targetSquare) {
+          triggerCaptureAnimation(targetPiece.type, targetPiece.color, targetSquare.position);
         }
         renderPieces();
         updateStatus();
@@ -276,7 +277,7 @@
       return false;
     }
 
-    // Smart AI Engine
+    // AI Engine
     const PIECE_VALUES = { p: 10, n: 30, b: 30, r: 50, q: 90, k: 900 };
 
     function evaluateMove(move) {
@@ -393,13 +394,13 @@
 
       const now = Date.now();
 
-      // Idle floating animation
+      // Idle board floating animation
       const time = now * 0.0025;
       piecesGroup.children.forEach((piece, idx) => {
         piece.position.y = 0.05 + Math.sin(time + idx * 0.4) * 0.015;
       });
 
-      // Render 360-degree expand and spin FX on captured pieces
+      // Capture FX loop: Expand 2.5x, Rotate 360°, Fade out
       for (let i = activeAnimations.length - 1; i >= 0; i--) {
         const anim = activeAnimations[i];
         const elapsed = now - anim.startTime;
@@ -409,16 +410,24 @@
           captureEffectsGroup.remove(anim.mesh);
           activeAnimations.splice(i, 1);
         } else {
-          // 1. Expand view (Scale up 2.5x)
-          const currentScale = anim.startScale * (1 + progress * 1.5);
-          anim.mesh.scale.set(currentScale, currentScale, currentScale);
+          // 1. Expand view (scale up to 2.5x)
+          const scaleMult = 1.0 + progress * 1.5;
+          anim.mesh.scale.set(
+            anim.startScale * scaleMult,
+            anim.startScale * scaleMult,
+            anim.startScale * scaleMult
+          );
 
-          // 2. Rise upward & spin 360 degrees
-          anim.mesh.position.y += 0.025;
+          // 2. Rise off board & 360 spin
+          anim.mesh.position.y += 0.02;
           anim.mesh.rotation.y += 0.15;
 
-          // 3. Fade out
-          anim.mesh.material.opacity = 1.0 - progress;
+          // 3. Fade out opacity
+          anim.mesh.traverse((child) => {
+            if (child.isMesh && child.material) {
+              child.material.opacity = 1.0 - progress;
+            }
+          });
         }
       }
 
